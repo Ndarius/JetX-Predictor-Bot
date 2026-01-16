@@ -75,9 +75,23 @@ class JetXBetpawaBot:
         chrome_options = Options()
         sel_config = self.config.get('selenium', {})
         
-        # Détection automatique du binaire Chrome sur Koyeb/Heroku/Render
+        # Détection automatique du binaire Chrome
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN") or sel_config.get('binary_location')
-        if chrome_bin and os.path.exists(chrome_bin):
+        
+        # Chemins communs pour Chrome sur Linux
+        common_chrome_paths = [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/local/bin/google-chrome"
+        ]
+        
+        if not chrome_bin:
+            for path in common_chrome_paths:
+                if os.path.exists(path):
+                    chrome_bin = path
+                    break
+        
+        if chrome_bin:
             logging.info(f"Utilisation du binaire Chrome : {chrome_bin}")
             chrome_options.binary_location = chrome_bin
             
@@ -90,13 +104,16 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--window-size=1920,1080")
         
         try:
-            # Tentative avec WebDriver Manager
-            service = ChromeService(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        except Exception as e:
-            logging.warning(f"Échec WebDriverManager, tentative directe : {e}")
-            # Tentative directe (utile si le driver est déjà dans le PATH comme sur Koyeb)
+            # Tentative directe d'abord (recommandé pour les environnements Docker/Koyeb)
             self.driver = webdriver.Chrome(options=chrome_options)
+        except Exception as e:
+            logging.warning(f"Échec tentative directe, essai avec WebDriverManager : {e}")
+            try:
+                service = ChromeService(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            except Exception as e2:
+                logging.error(f"Échec total de l'initialisation de Selenium : {e2}")
+                raise e2
             
         self.wait = WebDriverWait(self.driver, sel_config.get('wait_timeout', 30))
 

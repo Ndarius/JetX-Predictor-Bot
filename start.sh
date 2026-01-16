@@ -6,4 +6,4 @@ python jetx_betpawa_bot.py &
 
 # Lancer le dashboard Streamlit (processus principal)
 echo "Démarrage du Dashboard Streamlit..."
-streamlit run dashboard.py --server.port $PORT --server.address 0.0.0.0
+streamlit run dashboard.py --server.port ${PORT:-8000} --server.address 0.0.0.0
