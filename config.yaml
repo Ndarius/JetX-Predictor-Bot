@@ -1,40 +1,41 @@
-# Configuration pour JetX Predictor Bot
+# Configuration JetX Predictor Pro
 
+# URL du jeu
 url: "https://www.betpawa.bj/casino?gameId=jetx&filter=all"
+
+# Paramètres de stratégie
+strategy: "statistical"  # Options: statistical, martingale
 margin_factor: 1.5
-history_size: 50
+history_size: 2000
+
+# Fichiers de données
 csv_file: "jetx_data_log.csv"
 db_file: "jetx_data.db"
-strategy: "statistical"
 
-# Identifiants de connexion
+# Identifiants Betpawa
 auth:
   phone: "0162448761"
   pin: "2006"
 
-# Sélecteurs CSS pour JetX
+# Sélecteurs CSS (peuvent changer si le site est mis à jour)
 selectors:
   multiplier:
-    - ".current-multiplier"
     - ".multiplier-value"
+    - ".current-multiplier"
     - "div[class*='multiplier']"
-    - ".font-weight-bold.text-white"
-    - "div.multiplier-text"
   history:
     - ".history-item"
-    - ".last-results span"
-    - ".multiplier-history-item"
-    - "div.history-list-item"
+    - ".last-results"
+    - "div[class*='history']"
   login:
-    phone_input: "#login-form-phoneNumber"
-    pin_input: "#login-form-password-input"
+    phone_input: "input[name='phoneNumber']"
+    pin_input: "input[name='pincode']"
     submit_button: "input[type='submit']"
     login_trigger: "#casino-lobby-login-button-click"
 
 # Paramètres Selenium
 selenium:
   headless: true
-  binary_location: "/usr/bin/google-chrome"
   no_sandbox: true
   disable_dev_shm_usage: true
   wait_timeout: 30

@@ -31,7 +31,7 @@ class JetXBetpawaBot:
         self.setup_storage()
         self.setup_selenium()
         self.full_history = []
-        self.df_full = pd.DataFrame() # Pour l'analyse temporelle
+        self.df_full = pd.DataFrame()
         self.current_prediction = {"lower": None, "upper": None, "confidence": 0, "next": None}
 
     def load_config(self, path):
@@ -40,7 +40,6 @@ class JetXBetpawaBot:
         self.url = self.config.get('url')
         self.margin_factor = self.config.get('margin_factor', 1.5)
         self.history_size = self.config.get('history_size', 2000)
-        self.csv_file = self.config.get('csv_file', 'jetx_data_log.csv')
         self.db_file = self.config.get('db_file', 'jetx_data.db')
         self.selectors = self.config.get('selectors', {})
         self.auth = self.config.get('auth', {})
@@ -76,22 +75,29 @@ class JetXBetpawaBot:
         chrome_options = Options()
         sel_config = self.config.get('selenium', {})
         
-        if sel_config.get('binary_location'):
-            chrome_options.binary_location = sel_config.get('binary_location')
+        # Détection automatique du binaire Chrome sur Koyeb/Heroku/Render
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN") or sel_config.get('binary_location')
+        if chrome_bin and os.path.exists(chrome_bin):
+            logging.info(f"Utilisation du binaire Chrome : {chrome_bin}")
+            chrome_options.binary_location = chrome_bin
             
-        if sel_config.get('headless'):
-            chrome_options.add_argument("--headless")
+        if sel_config.get('headless', True):
+            chrome_options.add_argument("--headless=new")
             
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
         
-        # Sur Render, on utilise souvent le binaire pré-installé
         try:
-            self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=chrome_options)
+            # Tentative avec WebDriver Manager
+            service = ChromeService(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
         except Exception as e:
-            logging.warning(f"Échec de l'installation automatique du driver, tentative directe : {e}")
+            logging.warning(f"Échec WebDriverManager, tentative directe : {e}")
+            # Tentative directe (utile si le driver est déjà dans le PATH comme sur Koyeb)
             self.driver = webdriver.Chrome(options=chrome_options)
+            
         self.wait = WebDriverWait(self.driver, sel_config.get('wait_timeout', 30))
 
     def login(self):
@@ -158,7 +164,6 @@ class JetXBetpawaBot:
                     new_result = visual_history[-1]
                     self.full_history.append(new_result)
                     
-                    # Mise à jour du DataFrame pour l'analyse temporelle
                     new_row = pd.DataFrame([{'timestamp': datetime.datetime.now(), 'multiplier': new_result}])
                     self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
                     
@@ -177,7 +182,8 @@ class JetXBetpawaBot:
         except KeyboardInterrupt:
             logging.info("Arrêt.")
         finally:
-            self.driver.quit()
+            if hasattr(self, 'driver'):
+                self.driver.quit()
 
 if __name__ == "__main__":
     bot = JetXBetpawaBot()
