@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import logging
 import os
+import yaml
+import sqlite3
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -11,6 +13,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from strategies import StatisticalStrategy, MartingaleStrategy
 
 # Configuration du logging
 logging.basicConfig(
@@ -23,126 +26,159 @@ logging.basicConfig(
 )
 
 class JetXBetpawaBot:
-    def __init__(self, url, margin_factor=1.5, history_size=50):
-        self.url = url
-        self.margin_factor = margin_factor
-        self.history_size = history_size
-        self.data_history = []
-        self.csv_file = "jetx_data_log.csv"
+    def __init__(self, config_path="config.yaml"):
+        self.load_config(config_path)
+        self.setup_storage()
+        self.setup_selenium()
+        self.full_history = []
+        self.df_full = pd.DataFrame() # Pour l'analyse temporelle
+        self.current_prediction = {"lower": None, "upper": None, "confidence": 0, "next": None}
+
+    def load_config(self, path):
+        with open(path, 'r') as f:
+            self.config = yaml.safe_load(f)
+        self.url = self.config.get('url')
+        self.margin_factor = self.config.get('margin_factor', 1.5)
+        self.history_size = self.config.get('history_size', 2000)
+        self.csv_file = self.config.get('csv_file', 'jetx_data_log.csv')
+        self.db_file = self.config.get('db_file', 'jetx_data.db')
+        self.selectors = self.config.get('selectors', {})
+        self.auth = self.config.get('auth', {})
         
-        # Initialisation du fichier CSV s'il n'existe pas
-        if not os.path.exists(self.csv_file):
-            df = pd.DataFrame(columns=["timestamp", "multiplier", "type"])
-            df.to_csv(self.csv_file, index=False)
+        strat_name = self.config.get('strategy', 'statistical')
+        if strat_name == 'martingale':
+            self.strategy = MartingaleStrategy()
+        else:
+            self.strategy = StatisticalStrategy(margin_factor=self.margin_factor)
+
+    def setup_storage(self):
+        self.conn = sqlite3.connect(self.db_file, check_same_thread=False)
+        self.cursor = self.conn.cursor()
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS jetx_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME,
+                multiplier REAL,
+                type TEXT,
+                prediction REAL
+            )
+        ''')
+        self.conn.commit()
         
-        # Configuration Selenium
+        try:
+            self.df_full = pd.read_sql_query("SELECT * FROM jetx_logs WHERE type='result'", self.conn)
+            self.full_history = self.df_full['multiplier'].tolist()
+            logging.info(f"Historique chargé : {len(self.full_history)} tours récupérés.")
+        except:
+            logging.warning("Nouvelle base de données initialisée.")
+
+    def setup_selenium(self):
         chrome_options = Options()
+        sel_config = self.config.get('selenium', {})
+        
+        if sel_config.get('binary_location'):
+            chrome_options.binary_location = sel_config.get('binary_location')
+            
+        if sel_config.get('headless'):
+            chrome_options.add_argument("--headless")
+            
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
-        # chrome_options.add_argument("--headless") # Décommenter pour le déploiement sur serveur
+        chrome_options.add_argument("--window-size=1920,1080")
         
-        self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=chrome_options)
-        self.wait = WebDriverWait(self.driver, 20)
+        # Sur Render, on utilise souvent le binaire pré-installé
+        try:
+            self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=chrome_options)
+        except Exception as e:
+            logging.warning(f"Échec de l'installation automatique du driver, tentative directe : {e}")
+            self.driver = webdriver.Chrome(options=chrome_options)
+        self.wait = WebDriverWait(self.driver, sel_config.get('wait_timeout', 30))
 
-    def log_to_csv(self, multiplier, data_type="live"):
-        """Enregistre les données avec l'heure exacte."""
+    def login(self):
+        logging.info("Tentative de connexion...")
+        try:
+            self.driver.get(self.url)
+            time.sleep(5)
+            if "Deposit" in self.driver.page_source:
+                return True
+            login_trigger = self.selectors['login']['login_trigger']
+            self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
+            time.sleep(2)
+            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['phone_input']).send_keys(self.auth['phone'])
+            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
+            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
+            time.sleep(5)
+            return True
+        except Exception as e:
+            logging.error(f"Erreur login : {e}")
+            return False
+
+    def log_data(self, multiplier, data_type="live", prediction=None):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        new_data = pd.DataFrame([[now, multiplier, data_type]], columns=["timestamp", "multiplier", "type"])
-        new_data.to_csv(self.csv_file, mode='a', header=False, index=False)
+        self.cursor.execute('INSERT INTO jetx_logs (timestamp, multiplier, type, prediction) VALUES (?, ?, ?, ?)', 
+                           (now, multiplier, data_type, prediction))
+        self.conn.commit()
         return now
 
     def extract_multiplier(self):
-        """Extrait le multiplicateur en temps réel sur betpawa.bj."""
         try:
-            # Note: JetX est souvent dans une iframe sur les sites de casino
-            # On tente de trouver l'élément du multiplicateur (sélecteurs communs pour JetX)
-            selectors = [
-                ".current-multiplier", 
-                ".multiplier-value", 
-                "div[class*='multiplier']",
-                ".font-weight-bold.text-white" # Sélecteur potentiel dans l'iframe JetX
-            ]
-            
-            for selector in selectors:
+            for selector in self.selectors.get('multiplier', []):
                 elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
                 for el in elements:
                     text = el.text.replace('x', '').strip()
                     if text and text.replace('.', '').isdigit():
                         return float(text)
             return None
-        except Exception as e:
-            logging.debug(f"Erreur d'extraction : {e}")
+        except:
             return None
 
     def extract_history(self):
-        """Extrait l'historique des derniers multiplicateurs."""
         try:
-            # Sélecteurs pour la barre latérale d'historique
-            history_elements = self.driver.find_elements(By.CSS_SELECTOR, ".history-item, .last-results span")
             history = []
-            for el in history_elements[-self.history_size:]:
-                try:
-                    val = float(el.text.replace('x', '').strip())
-                    history.append(val)
-                except ValueError:
-                    continue
+            for selector in self.selectors.get('history', []):
+                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                if elements:
+                    for el in elements:
+                        try:
+                            val = float(el.text.replace('x', '').strip())
+                            history.append(val)
+                        except: continue
+                    if history: break
             return history
-        except Exception as e:
-            logging.error(f"Erreur historique : {e}")
-            return []
-
-    def analyze_and_predict(self, history):
-        if len(history) < 5:
-            return None, None
-        mean = np.mean(history)
-        std_dev = np.std(history)
-        lower_bound = max(1.0, mean - self.margin_factor * std_dev)
-        upper_bound = mean + self.margin_factor * std_dev
-        return lower_bound, upper_bound
+        except: return []
 
     def run(self):
-        logging.info(f"Connexion à {self.url}")
-        self.driver.get(self.url)
-        
-        print("\n--- ATTENTION ---")
-        print("Si le jeu est dans une iframe ou nécessite une connexion,")
-        print("veuillez vous assurer que la page est bien chargée.")
-        print("-----------------\n")
-
+        if not self.login(): return
+        logging.info("Surveillance active...")
         try:
             last_val = None
             while True:
-                # 1. Mise à jour de l'historique
-                current_history = self.extract_history()
-                if current_history:
-                    self.data_history = current_history
-                
-                # 2. Analyse
-                lower, upper = self.analyze_and_predict(self.data_history)
-                
-                # 3. Temps réel
-                current_val = self.extract_multiplier()
-                
-                if current_val is not None and current_val != last_val:
-                    timestamp = self.log_to_csv(current_val)
-                    last_val = current_val
+                visual_history = self.extract_history()
+                if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
+                    new_result = visual_history[-1]
+                    self.full_history.append(new_result)
                     
-                    if lower and upper:
-                        if current_val >= upper:
-                            logging.info(f"[{timestamp}] SIGNAL: CASH OUT! {current_val}x (Cible: {upper:.2f}x)")
-                        else:
-                            logging.info(f"[{timestamp}] En vol: {current_val}x | Cible: {upper:.2f}x")
+                    # Mise à jour du DataFrame pour l'analyse temporelle
+                    new_row = pd.DataFrame([{'timestamp': datetime.datetime.now(), 'multiplier': new_result}])
+                    self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
+                    
+                    lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
+                    self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
+                    
+                    timestamp = self.log_data(new_result, "result", next_p)
+                    logging.info(f"[{timestamp}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
                 
-                time.sleep(0.5) # Fréquence rapide pour ne rien rater
-                
+                current_val = self.extract_multiplier()
+                if current_val is not None and current_val != last_val:
+                    last_val = current_val
+                    if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
+                        logging.info(f"SIGNAL: CASH OUT! {current_val}x")
+                time.sleep(0.3)
         except KeyboardInterrupt:
-            logging.info("Arrêt par l'utilisateur.")
+            logging.info("Arrêt.")
         finally:
             self.driver.quit()
 
 if __name__ == "__main__":
-    URL = "https://www.betpawa.bj/casino?gameId=jetx&filter=all"
-    bot = JetXBetpawaBot(URL)
-    # bot.run() # Décommenter pour lancer
-    print("Script configuré pour betpawa.bj avec horodatage.")
-    print("Les données sont enregistrées dans 'jetx_data_log.csv'.")
+    bot = JetXBetpawaBot()
+    bot.run()

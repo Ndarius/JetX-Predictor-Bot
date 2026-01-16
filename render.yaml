@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: jetx-predictor-dashboard
+    env: python
+    buildCommand: "./render_build.sh"
+    startCommand: "streamlit run dashboard.py --server.port $PORT --server.address 0.0.0.0"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: CHROMEDRIVER_PATH
+        value: /usr/local/bin/chromedriver
+      - key: GOOGLE_CHROME_BIN
+        value: /usr/bin/google-chrome

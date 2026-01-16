@@ -1,4 +1,7 @@
-selenium
 numpy
 pandas
+selenium
 webdriver-manager
+pyyaml
+streamlit
+plotly
