@@ -146,6 +146,9 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--single-process")
         chrome_options.add_argument("--disable-setuid-sandbox")
         chrome_options.add_argument("--no-zygote")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--memory-pressure-off")
+        chrome_options.add_argument("--js-flags='--max-old-space-size=512'")
         
         try:
             from webdriver_manager.chrome import ChromeDriverManager

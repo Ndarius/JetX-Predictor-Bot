@@ -56,7 +56,8 @@ df = load_data()
 if df.empty:
     st.error("🔴 Bot en attente de connexion ou de données...")
     st.info("⏳ Le bot JetX démarre en arrière-plan. Cela peut prendre 1 à 2 minutes lors du premier lancement sur Koyeb.")
-    if st.button("Vérifier à nouveau"):
+    st.write(f"Chemin DB recherché : `{db_file}`")
+    if st.button("🔄 Vérifier à nouveau"):
         st.rerun()
 else:
     # Indicateur de statut
