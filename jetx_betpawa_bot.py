@@ -221,7 +221,14 @@ class JetXBetpawaBot:
         logging.info("Surveillance active...")
         try:
             last_val = None
+            last_heartbeat = time.time()
+            logging.info("Connexion réussie, début de la surveillance...")
             while True:
+                # Heartbeat toutes les 60 secondes pour confirmer que le bot tourne
+                if time.time() - last_heartbeat > 60:
+                    logging.info("Bot en cours d'exécution... Recherche de nouvelles données JetX.")
+                    last_heartbeat = time.time()
+
                 visual_history = self.extract_history()
                 if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
                     new_result = visual_history[-1]

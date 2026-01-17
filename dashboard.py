@@ -23,8 +23,22 @@ st.markdown("""
 
 st.title("🚀 JetX Predictor Pro - Analyse Temporelle & Horaires")
 
-# Utiliser /tmp sur Koyeb pour éviter l'erreur de lecture seule
-if os.environ.get('KOYEB_APP_ID') or os.environ.get('PORT'):
+# Indicateur de statut du bot
+df_status = load_data()
+if not df_status.empty:
+    last_update = df_status.iloc[0]['timestamp']
+    diff = (datetime.now() - last_update).total_seconds()
+    if diff < 60:
+        st.success(f"🟢 Bot Actif - Dernière mise à jour il y a {int(diff)}s")
+    else:
+        st.warning(f"🟠 Bot Inactif ou en attente - Dernier tour il y a {int(diff/60)} min")
+else:
+    st.error("🔴 Bot en attente de connexion ou de données...")
+
+# Utiliser le volume Koyeb si disponible, sinon /tmp
+if os.path.exists("/bot"):
+    db_file = "/bot/jetx_data.db"
+elif os.environ.get('KOYEB_APP_ID') or os.environ.get('PORT'):
     db_file = os.path.join("/tmp", "jetx_data.db")
 else:
     base_dir = os.path.dirname(os.path.abspath(__file__))
