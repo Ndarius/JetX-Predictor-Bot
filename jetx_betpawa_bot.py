@@ -12,7 +12,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+# ChromeDriverManager supprimé car géré par les buildpacks Koyeb
 from strategies import StatisticalStrategy, MartingaleStrategy
 
 # Configuration du logging
@@ -100,13 +100,8 @@ class JetXBetpawaBot:
                 # Tentative directe (recommandé pour les environnements Docker/Koyeb si PATH est OK)
                 self.driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
-            logging.warning(f"Échec tentative directe, essai avec WebDriverManager : {e}")
-            try:
-                service = ChromeService(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            except Exception as e2:
-                logging.error(f"Échec total de l'initialisation de Selenium : {e2}")
-                raise e2
+            logging.error(f"Échec de l'initialisation de Selenium : {e}")
+            raise e
             
         self.wait = WebDriverWait(self.driver, sel_config.get('wait_timeout', 30))
 
