@@ -290,12 +290,15 @@ class JetXBetpawaBot:
                 self.driver.quit()
 
 if __name__ == "__main__":
+    print("--- BOT STARTUP ---", flush=True)
     while True:
         try:
             logging.info("Initialisation du bot...")
             bot = JetXBetpawaBot()
             bot.run()
         except Exception as e:
+            print(f"CRITICAL ERROR: {e}", flush=True)
             logging.error(f"Erreur critique dans la boucle principale : {e}")
-            logging.info("Nouvelle tentative dans 30 secondes...")
-            time.sleep(30)
+            time.sleep(10)
+            # On ne quitte pas pour éviter le code 255, on boucle
+            continue
