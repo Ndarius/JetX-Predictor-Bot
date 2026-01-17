@@ -23,8 +23,12 @@ st.markdown("""
 
 st.title("🚀 JetX Predictor Pro - Analyse Temporelle & Horaires")
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
-db_file = os.path.join(base_dir, "jetx_data.db")
+# Utiliser /tmp sur Koyeb pour éviter l'erreur de lecture seule
+if os.environ.get('KOYEB_APP_ID') or os.environ.get('PORT'):
+    db_file = os.path.join("/tmp", "jetx_data.db")
+else:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_file = os.path.join(base_dir, "jetx_data.db")
 
 def load_data():
     if not os.path.exists(db_file): return pd.DataFrame()
