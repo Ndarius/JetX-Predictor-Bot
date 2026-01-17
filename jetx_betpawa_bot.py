@@ -75,21 +75,9 @@ class JetXBetpawaBot:
         chrome_options = Options()
         sel_config = self.config.get('selenium', {})
         
-        # Détection automatique du binaire Chrome
+        # Détection automatique du binaire Chrome (Buildpacks Heroku/Koyeb)
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN") or sel_config.get('binary_location')
-        
-        # Chemins communs pour Chrome sur Linux
-        common_chrome_paths = [
-            "/usr/bin/google-chrome",
-            "/usr/bin/google-chrome-stable",
-            "/usr/local/bin/google-chrome"
-        ]
-        
-        if not chrome_bin:
-            for path in common_chrome_paths:
-                if os.path.exists(path):
-                    chrome_bin = path
-                    break
+        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
         
         if chrome_bin:
             logging.info(f"Utilisation du binaire Chrome : {chrome_bin}")
@@ -104,8 +92,13 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--window-size=1920,1080")
         
         try:
-            # Tentative directe d'abord (recommandé pour les environnements Docker/Koyeb)
-            self.driver = webdriver.Chrome(options=chrome_options)
+            if chromedriver_path:
+                logging.info(f"Utilisation du ChromeDriver : {chromedriver_path}")
+                service = ChromeService(executable_path=chromedriver_path)
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                # Tentative directe (recommandé pour les environnements Docker/Koyeb si PATH est OK)
+                self.driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
             logging.warning(f"Échec tentative directe, essai avec WebDriverManager : {e}")
             try:
