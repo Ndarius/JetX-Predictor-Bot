@@ -1,31 +1,30 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-import plotly.express as px
-import plotly.graph_objects as go
+import psycopg2
 import os
 from datetime import datetime
 
 # Configuration
 st.set_page_config(page_title="JetX Predictor Pro", layout="wide", page_icon="🚀")
 
-# Unified DB Path Logic
-if os.path.exists("/bot"):
-    db_file = "/bot/jetx_data.db"
-else:
-    db_file = "/tmp/jetx_data.db"
+def get_db_connection():
+    return psycopg2.connect(
+        host=os.environ.get('DATABASE_HOST'),
+        user=os.environ.get('DATABASE_USER'),
+        password=os.environ.get('DATABASE_PASSWORD'),
+        database=os.environ.get('DATABASE_NAME'),
+        port=os.environ.get('DATABASE_PORT', 5432)
+    )
 
 @st.cache_data(ttl=1)
 def load_data():
-    if not os.path.exists(db_file):
-        return pd.DataFrame()
     try:
-        conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
+        conn = get_db_connection()
         df = pd.read_sql_query("SELECT * FROM jetx_logs ORDER BY timestamp DESC LIMIT 100", conn)
         conn.close()
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         return df
-    except:
+    except Exception as e:
         return pd.DataFrame()
 
 st.title("🚀 JetX Predictor Pro")
@@ -36,7 +35,7 @@ df = load_data()
 
 if df.empty:
     st.error("🔴 Bot en attente de données...")
-    st.info(f"Le bot doit d'abord capturer un tour. DB: `{db_file}`")
+    st.info("Le bot doit d'abord capturer un tour dans la base PostgreSQL.")
     if st.button("🔄 Actualiser"):
         st.rerun()
 else:
@@ -50,7 +49,7 @@ else:
             <div style="background-color: #262730; padding: 30px; border-radius: 15px; border-left: 10px solid #00ff00; text-align: center; margin-bottom: 25px;">
                 <h2 style="margin: 0; color: #00ff00;">🔮 PRÉDICTION PROCHAIN TOUR</h2>
                 <h1 style="font-size: 80px; margin: 10px 0;">{latest['prediction']:.2f}x</h1>
-                <p style="color: #888;">Basé sur l'analyse en temps réel</p>
+                <p style="color: #888;">Analyse PostgreSQL en temps réel</p>
             </div>
         """, unsafe_allow_html=True)
         
@@ -67,12 +66,6 @@ else:
                         <h2 style="margin: 5px 0; color: {color};">{row['multiplier']:.2f}x</h2>
                     </div>
                 """, unsafe_allow_html=True)
-
-        # 3. GRAPHIQUE
-        st.subheader("📈 Tendance")
-        fig = px.line(df_results.head(20), x='timestamp', y='multiplier', markers=True)
-        fig.update_layout(template="plotly_dark", height=300, margin=dict(l=0,r=0,t=0,b=0))
-        st.plotly_chart(fig, use_container_width=True)
 
 # Auto-refresh
 import time
