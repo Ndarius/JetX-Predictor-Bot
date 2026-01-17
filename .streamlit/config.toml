@@ -1,7 +1,5 @@
 [browser]
 gatherUsageStats = false
-serverAddress = "0.0.0.0"
-serverPort = 8000
 
 [server]
 headless = true
@@ -9,12 +7,9 @@ port = 8000
 address = "0.0.0.0"
 enableCORS = false
 enableXsrfProtection = false
-enableWebsocketCompression = true
-maxMessageSize = 200
 
 [theme]
 primaryColor = "#ff4b4b"
 backgroundColor = "#0e1117"
 secondaryBackgroundColor = "#262730"
 textColor = "#fafafa"
-font = "sans serif"

@@ -59,18 +59,11 @@ class JetXBetpawaBot:
             self.strategy = StatisticalStrategy(margin_factor=self.margin_factor)
 
     def setup_storage(self):
-        # Sur Koyeb/Heroku, le système de fichiers est souvent en lecture seule.
-        # On utilise /tmp pour la base de données SQLite.
-        # Sur Koyeb, on utilise le volume monté sur /bot pour la persistance.
         if os.path.exists("/bot"):
-            self.db_file = os.path.join("/bot", "jetx_data.db")
-            logging.info(f"Volume Koyeb détecté, utilisation de : {self.db_file}")
-        elif os.environ.get('KOYEB_APP_ID') or os.environ.get('PORT'):
-            self.db_file = os.path.join("/tmp", "jetx_data.db")
-            logging.info(f"Environnement serveur détecté (sans volume), utilisation de : {self.db_file}")
-        elif not os.path.isabs(self.db_file):
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            self.db_file = os.path.join(base_dir, self.db_file)
+            self.db_file = "/bot/jetx_data.db"
+        else:
+            self.db_file = "/tmp/jetx_data.db"
+        logging.info(f"Base de données : {self.db_file}")
             
         self.conn = sqlite3.connect(self.db_file, check_same_thread=False)
         self.cursor = self.conn.cursor()
