@@ -145,41 +145,75 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--remote-debugging-port=9222")
         
         try:
+            from webdriver_manager.chrome import ChromeDriverManager
+            from webdriver_manager.core.os_manager import ChromeType
+            
             if chromedriver_path and os.path.exists(chromedriver_path):
                 logging.info(f"Utilisation du ChromeDriver : {chromedriver_path}")
                 service = ChromeService(executable_path=chromedriver_path)
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            elif os.path.exists("/usr/bin/chromedriver"):
+                logging.info("Utilisation du ChromeDriver système : /usr/bin/chromedriver")
+                service = ChromeService(executable_path="/usr/bin/chromedriver")
             else:
-                logging.info("Tentative de démarrage de Chrome sans chemin de driver explicite...")
-                # On force l'utilisation de chromium-driver installé via apt
-                if os.path.exists("/usr/bin/chromedriver"):
-                    service = ChromeService(executable_path="/usr/bin/chromedriver")
-                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                else:
-                    self.driver = webdriver.Chrome(options=chrome_options)
+                logging.info("Installation automatique du ChromeDriver via webdriver-manager...")
+                driver_path = ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install()
+                service = ChromeService(executable_path=driver_path)
+            
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            logging.info("Navigateur Chrome démarré avec succès.")
         except Exception as e:
             logging.error(f"Échec de l'initialisation de Selenium : {e}")
-            raise e
+            # Tentative de secours ultime
+            try:
+                logging.info("Tentative de secours sans service explicite...")
+                self.driver = webdriver.Chrome(options=chrome_options)
+            except Exception as e2:
+                logging.error(f"Échec de la tentative de secours : {e2}")
+                raise e2
             
         self.wait = WebDriverWait(self.driver, sel_config.get('wait_timeout', 30))
 
     def login(self):
-        logging.info("Tentative de connexion...")
+        logging.info(f"Tentative de connexion à : {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(5)
-            if "Deposit" in self.driver.page_source:
+            time.sleep(10) # Augmenté pour laisser le temps au chargement
+            
+            # Vérification si déjà connecté
+            if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source:
+                logging.info("Déjà connecté (bouton Deposit trouvé).")
                 return True
+            
+            logging.info("Recherche du bouton de connexion...")
             login_trigger = self.selectors['login']['login_trigger']
-            self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
-            time.sleep(2)
+            try:
+                self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
+                logging.info("Bouton de connexion cliqué.")
+            except Exception as e:
+                logging.warning(f"Bouton de connexion non trouvé ou non cliquable : {e}")
+                # On continue quand même, peut-être que le formulaire est déjà visible
+            
+            time.sleep(3)
+            logging.info("Remplissage du formulaire...")
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['phone_input']).send_keys(self.auth['phone'])
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
-            time.sleep(5)
-            return True
+            
+            logging.info("Formulaire soumis, attente de redirection...")
+            time.sleep(10)
+            
+            if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source:
+                logging.info("Connexion réussie !")
+                return True
+            else:
+                logging.warning("Connexion incertaine (bouton Deposit non trouvé après login).")
+                # On retourne True quand même pour tenter la suite
+                return True
         except Exception as e:
-            logging.error(f"Erreur login : {e}")
+            logging.error(f"Erreur critique lors du login : {e}")
+            # On prend une capture d'écran pour le debug si possible (sauvegardée localement dans le conteneur)
+            try: self.driver.save_screenshot("login_error.png")
+            except: pass
             return False
 
     def log_data(self, multiplier, data_type="live", prediction=None):
