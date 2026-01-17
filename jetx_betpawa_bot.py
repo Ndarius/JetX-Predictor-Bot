@@ -54,12 +54,18 @@ class JetXBetpawaBot:
             self.strategy = StatisticalStrategy(margin_factor=self.margin_factor)
 
     def get_db_connection(self):
+        host = os.environ.get('DATABASE_HOST', '')
+        # Extract endpoint ID from host (e.g., ep-green-glade-ahx9joi6)
+        endpoint_id = host.split('.')[0] if host else ''
+        
         return psycopg2.connect(
-            host=os.environ.get('DATABASE_HOST'),
+            host=host,
             user=os.environ.get('DATABASE_USER'),
             password=os.environ.get('DATABASE_PASSWORD'),
             database=os.environ.get('DATABASE_NAME'),
-            port=os.environ.get('DATABASE_PORT', 5432)
+            port=os.environ.get('DATABASE_PORT', 5432),
+            sslmode='require',
+            options=f"-c optimize_unpack_json=off -c endpoint={endpoint_id}"
         )
 
     def setup_storage(self):

@@ -8,12 +8,16 @@ from datetime import datetime
 st.set_page_config(page_title="JetX Predictor Pro", layout="wide", page_icon="🚀")
 
 def get_db_connection():
+    host = os.environ.get('DATABASE_HOST', '')
+    endpoint_id = host.split('.')[0] if host else ''
     return psycopg2.connect(
-        host=os.environ.get('DATABASE_HOST'),
+        host=host,
         user=os.environ.get('DATABASE_USER'),
         password=os.environ.get('DATABASE_PASSWORD'),
         database=os.environ.get('DATABASE_NAME'),
-        port=os.environ.get('DATABASE_PORT', 5432)
+        port=os.environ.get('DATABASE_PORT', 5432),
+        sslmode='require',
+        options=f"-c endpoint={endpoint_id}"
     )
 
 @st.cache_data(ttl=1)
