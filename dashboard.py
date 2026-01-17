@@ -23,7 +23,8 @@ st.markdown("""
 
 st.title("🚀 JetX Predictor Pro - Analyse Temporelle & Horaires")
 
-db_file = "jetx_data.db"
+base_dir = os.path.dirname(os.path.abspath(__file__))
+db_file = os.path.join(base_dir, "jetx_data.db")
 
 def load_data():
     if not os.path.exists(db_file): return pd.DataFrame()
