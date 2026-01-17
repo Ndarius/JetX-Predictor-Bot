@@ -4,3 +4,4 @@ selenium
 pyyaml
 streamlit
 plotly
+webdriver-manager
