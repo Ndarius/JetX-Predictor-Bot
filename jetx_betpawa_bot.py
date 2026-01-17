@@ -136,13 +136,16 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        chrome_options.add_argument("--window-size=1280,720")
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--proxy-server='direct://'")
         chrome_options.add_argument("--proxy-bypass-list=*")
-        chrome_options.add_argument("--start-maximized")
         chrome_options.add_argument("--disable-infobars")
         chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument("--single-process")
+        chrome_options.add_argument("--disable-setuid-sandbox")
+        chrome_options.add_argument("--no-zygote")
         
         try:
             from webdriver_manager.chrome import ChromeDriverManager
@@ -159,11 +162,14 @@ class JetXBetpawaBot:
                 driver_path = ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install()
                 service = ChromeService(executable_path=driver_path)
             
+            # Augmentation du timeout de connexion pour éviter le "Read timed out"
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            self.driver.set_page_load_timeout(60)
             logging.info("Navigateur Chrome démarré avec succès.")
         except Exception as e:
             logging.error(f"Échec de l'initialisation de Selenium : {e}")
-            # Tentative de secours ultime
+            # Tentative de secours ultime avec un délai
+            time.sleep(5)
             try:
                 logging.info("Tentative de secours sans service explicite...")
                 self.driver = webdriver.Chrome(options=chrome_options)
