@@ -21,20 +21,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 JetX Predictor Pro - Analyse Temporelle & Horaires")
-
-# Indicateur de statut du bot
-df_status = load_data()
-if not df_status.empty:
-    last_update = df_status.iloc[0]['timestamp']
-    diff = (datetime.now() - last_update).total_seconds()
-    if diff < 60:
-        st.success(f"🟢 Bot Actif - Dernière mise à jour il y a {int(diff)}s")
-    else:
-        st.warning(f"🟠 Bot Inactif ou en attente - Dernier tour il y a {int(diff/60)} min")
-else:
-    st.error("🔴 Bot en attente de connexion ou de données...")
-
 # Utiliser le volume Koyeb si disponible, sinon /tmp
 if os.path.exists("/bot"):
     db_file = "/bot/jetx_data.db"
@@ -53,6 +39,20 @@ def load_data():
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         return df
     except: return pd.DataFrame()
+
+st.title("🚀 JetX Predictor Pro - Analyse Temporelle & Horaires")
+
+# Indicateur de statut du bot
+df_status = load_data()
+if not df_status.empty:
+    last_update = df_status.iloc[0]['timestamp']
+    diff = (datetime.now() - last_update).total_seconds()
+    if diff < 60:
+        st.success(f"🟢 Bot Actif - Dernière mise à jour il y a {int(diff)}s")
+    else:
+        st.warning(f"🟠 Bot Inactif ou en attente - Dernier tour il y a {int(diff/60)} min")
+else:
+    st.error("🔴 Bot en attente de connexion ou de données...")
 
 # Sidebar
 st.sidebar.header("⚙️ Configuration")
