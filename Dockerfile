@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libpangocairo-1.0-0 \
     libpango-1.0-0 \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Google Chrome
