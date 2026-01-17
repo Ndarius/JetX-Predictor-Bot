@@ -100,9 +100,35 @@ class JetXBetpawaBot:
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN") or sel_config.get('binary_location')
         chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
         
+        # Chemins par défaut courants sur Koyeb/Heroku avec buildpacks
+        default_chrome_paths = [
+            "/app/.apt/usr/bin/google-chrome",
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable"
+        ]
+        default_driver_paths = [
+            "/app/.chromedriver/bin/chromedriver",
+            "/usr/local/bin/chromedriver",
+            "/usr/bin/chromedriver"
+        ]
+
+        if not chrome_bin:
+            for path in default_chrome_paths:
+                if os.path.exists(path):
+                    chrome_bin = path
+                    break
+        
+        if not chromedriver_path:
+            for path in default_driver_paths:
+                if os.path.exists(path):
+                    chromedriver_path = path
+                    break
+
         if chrome_bin:
             logging.info(f"Utilisation du binaire Chrome : {chrome_bin}")
             chrome_options.binary_location = chrome_bin
+        else:
+            logging.warning("Binaire Chrome non trouvé explicitement, Selenium tentera la détection automatique.")
             
         if sel_config.get('headless', True):
             chrome_options.add_argument("--headless=new")
@@ -113,12 +139,12 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--window-size=1920,1080")
         
         try:
-            if chromedriver_path:
+            if chromedriver_path and os.path.exists(chromedriver_path):
                 logging.info(f"Utilisation du ChromeDriver : {chromedriver_path}")
                 service = ChromeService(executable_path=chromedriver_path)
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
             else:
-                # Tentative directe (recommandé pour les environnements Docker/Koyeb si PATH est OK)
+                logging.info("Tentative de démarrage de Chrome sans chemin de driver explicite...")
                 self.driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
             logging.error(f"Échec de l'initialisation de Selenium : {e}")
