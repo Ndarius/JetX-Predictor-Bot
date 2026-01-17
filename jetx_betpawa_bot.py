@@ -256,5 +256,12 @@ class JetXBetpawaBot:
                 self.driver.quit()
 
 if __name__ == "__main__":
-    bot = JetXBetpawaBot()
-    bot.run()
+    while True:
+        try:
+            logging.info("Initialisation du bot...")
+            bot = JetXBetpawaBot()
+            bot.run()
+        except Exception as e:
+            logging.error(f"Erreur critique dans la boucle principale : {e}")
+            logging.info("Nouvelle tentative dans 30 secondes...")
+            time.sleep(30)
