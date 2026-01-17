@@ -5,7 +5,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 import time
 import os
+import sys
 from datetime import datetime
+
+# Ajouter le répertoire courant au chemin de recherche Python
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 st.set_page_config(page_title="JetX Predictor Pro", layout="wide", page_icon="🚀")
 

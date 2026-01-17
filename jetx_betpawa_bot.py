@@ -4,8 +4,13 @@ import numpy as np
 import pandas as pd
 import logging
 import os
+import sys
 import yaml
 import sqlite3
+
+# Ajouter le répertoire courant au chemin de recherche Python
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
