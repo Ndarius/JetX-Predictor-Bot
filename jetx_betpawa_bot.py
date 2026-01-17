@@ -137,6 +137,12 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--proxy-server='direct://'")
+        chrome_options.add_argument("--proxy-bypass-list=*")
+        chrome_options.add_argument("--start-maximized")
+        chrome_options.add_argument("--disable-infobars")
+        chrome_options.add_argument("--remote-debugging-port=9222")
         
         try:
             if chromedriver_path and os.path.exists(chromedriver_path):
@@ -145,7 +151,12 @@ class JetXBetpawaBot:
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
             else:
                 logging.info("Tentative de démarrage de Chrome sans chemin de driver explicite...")
-                self.driver = webdriver.Chrome(options=chrome_options)
+                # On force l'utilisation de chromium-driver installé via apt
+                if os.path.exists("/usr/bin/chromedriver"):
+                    service = ChromeService(executable_path="/usr/bin/chromedriver")
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                else:
+                    self.driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
             logging.error(f"Échec de l'initialisation de Selenium : {e}")
             raise e
