@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -28,8 +28,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Google Chrome
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
+RUN curl -sSL https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list \
     && apt-get update \
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
@@ -44,6 +44,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project files
 COPY . .
 
+# Ensure the volume directory exists and has correct permissions
+RUN mkdir -p /bot && chmod 777 /bot
+
 # Make start script executable
 RUN chmod +x start.sh
 
@@ -53,6 +56,7 @@ EXPOSE 8000
 # Set environment variables
 ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
+ENV GOOGLE_CHROME_BIN=/usr/bin/google-chrome-stable
 
 # Run the start script
 CMD ["./start.sh"]
