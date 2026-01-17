@@ -9,15 +9,19 @@ st.set_page_config(page_title="JetX Predictor Pro", layout="wide", page_icon="ðŸ
 
 def get_db_connection():
     host = os.environ.get('DATABASE_HOST', '')
+    user = os.environ.get('DATABASE_USER', '')
     endpoint_id = host.split('.')[0] if host else ''
+    
+    if endpoint_id and '$' not in user:
+        user = f"{endpoint_id}${user}"
+        
     return psycopg2.connect(
         host=host,
-        user=os.environ.get('DATABASE_USER'),
+        user=user,
         password=os.environ.get('DATABASE_PASSWORD'),
         database=os.environ.get('DATABASE_NAME'),
         port=os.environ.get('DATABASE_PORT', 5432),
-        sslmode='require',
-        options=f"-c endpoint={endpoint_id}"
+        sslmode='require'
     )
 
 @st.cache_data(ttl=1)

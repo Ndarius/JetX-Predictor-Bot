@@ -55,17 +55,23 @@ class JetXBetpawaBot:
 
     def get_db_connection(self):
         host = os.environ.get('DATABASE_HOST', '')
-        # Extract endpoint ID from host (e.g., ep-green-glade-ahx9joi6)
+        user = os.environ.get('DATABASE_USER', '')
+        password = os.environ.get('DATABASE_PASSWORD', '')
+        dbname = os.environ.get('DATABASE_NAME', '')
         endpoint_id = host.split('.')[0] if host else ''
         
+        # Neon recommended format: endpoint_id$username
+        # This is the most reliable way to pass the endpoint ID
+        if endpoint_id and '$' not in user:
+            user = f"{endpoint_id}${user}"
+            
         return psycopg2.connect(
             host=host,
-            user=os.environ.get('DATABASE_USER'),
-            password=os.environ.get('DATABASE_PASSWORD'),
-            database=os.environ.get('DATABASE_NAME'),
+            user=user,
+            password=password,
+            database=dbname,
             port=os.environ.get('DATABASE_PORT', 5432),
-            sslmode='require',
-            options=f"-c optimize_unpack_json=off -c endpoint={endpoint_id}"
+            sslmode='require'
         )
 
     def setup_storage(self):
