@@ -1,7 +1,6 @@
 numpy
 pandas
 selenium
-# webdriver-manager supprimé
 pyyaml
 streamlit
 plotly

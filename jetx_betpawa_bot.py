@@ -12,7 +12,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-# ChromeDriverManager supprimé car géré par les buildpacks Koyeb
+# Selenium configuration for Koyeb
 from strategies import StatisticalStrategy, MartingaleStrategy
 
 # Configuration du logging
