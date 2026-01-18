@@ -112,33 +112,33 @@ class JetXBetpawaBot:
         chrome_options = Options()
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-dev-shm-usage") # Utilise /tmp au lieu de /dev/shm
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
         
-        # Optimisations extrêmes pour Koyeb
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--disable-dev-tools")
+        # Options critiques pour la stabilité sur Koyeb
         chrome_options.add_argument("--no-zygote")
         chrome_options.add_argument("--single-process")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-setuid-sandbox")
         chrome_options.add_argument("--remote-debugging-port=9222")
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+        
+        # Forcer l'utilisation de /tmp pour le profil utilisateur
+        user_data_dir = "/tmp/chrome-user-data-" + str(time.time())
+        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
         
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
         chrome_options.binary_location = chrome_bin
         
         driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
         
-        logging.info(f"Démarrage de Chromium ({chrome_bin}) avec le driver {driver_path}...")
+        logging.info(f"Démarrage de Chromium ({chrome_bin})...")
         
         try:
             service = ChromeService(executable_path=driver_path)
-            # On utilise un timeout de service plus long
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            
             self.driver.set_page_load_timeout(120)
-            self.driver.set_script_timeout(120)
             logging.info("Chromium démarré avec succès.")
         except Exception as e:
             logging.error(f"Échec critique Selenium : {e}")
@@ -150,12 +150,7 @@ class JetXBetpawaBot:
         logging.info(f"Accès à {self.url}")
         try:
             self.driver.get(self.url)
-            # Attente progressive
-            for i in range(4):
-                time.sleep(10)
-                logging.info(f"Attente chargement... ({i+1}/4)")
-                if "jetx" in self.driver.current_url.lower() or "Deposit" in self.driver.page_source:
-                    break
+            time.sleep(20)
             
             if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source:
                 logging.info("Déjà connecté.")
