@@ -8,15 +8,32 @@ from datetime import datetime
 st.set_page_config(page_title="JetX Predictor Pro", layout="wide", page_icon="🚀")
 
 def get_db_connection():
+    # Prioritize DATABASE_URL if provided by Koyeb/Neon
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url:
+        # Ensure endpoint is specified if it's a Neon URL
+        if "neon.tech" in db_url or "koyeb.app" in db_url:
+            if "options=endpoint%3D" not in db_url and "?" in db_url:
+                host = db_url.split("@")[1].split("/")[0]
+                endpoint_id = host.split(".")[0]
+                db_url += f"&options=endpoint%3D{endpoint_id}"
+            elif "options=endpoint%3D" not in db_url and "?" not in db_url:
+                host = db_url.split("@")[1].split("/")[0]
+                endpoint_id = host.split(".")[0]
+                db_url += f"?options=endpoint%3D{endpoint_id}"
+        return psycopg2.connect(db_url)
+
     host = os.environ.get('DATABASE_HOST', '')
     user = os.environ.get('DATABASE_USER', '')
     password = os.environ.get('DATABASE_PASSWORD', '')
     dbname = os.environ.get('DATABASE_NAME', '')
+    port = os.environ.get('DATABASE_PORT', '5432')
+    
     # Extract the first part of the host (e.g., ep-green-glade-ahx9joi6)
     endpoint_id = host.split('.')[0] if host else ''
     
     # Use the full connection string format required by Neon/Koyeb
-    conn_str = f"postgresql://{user}:{password}@{host}/{dbname}?sslmode=require&options=endpoint%3D{endpoint_id}"
+    conn_str = f"postgresql://{user}:{password}@{host}:{port}/{dbname}?sslmode=require&options=endpoint%3D{endpoint_id}"
     return psycopg2.connect(conn_str)
 
 @st.cache_data(ttl=1)
