@@ -228,33 +228,43 @@ class JetXBetpawaBot:
         except: return []
 
     def run(self):
-        if not self.login(): return
+        if not self.login(): 
+            logging.error("Échec du login. Arrêt du bot.")
+            return
         logging.info("Surveillance active...")
         try:
             last_val = None
             while True:
-                visual_history = self.extract_history()
-                if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
-                    new_result = visual_history[-1]
-                    self.full_history.append(new_result)
+                try:
+                    visual_history = self.extract_history()
+                    if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
+                        new_result = visual_history[-1]
+                        self.full_history.append(new_result)
+                        
+                        new_row = pd.DataFrame([{'multiplier': new_result}])
+                        self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
+                        
+                        lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
+                        self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
+                        
+                        ts = self.log_data(new_result, "result", next_p)
+                        logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
                     
-                    new_row = pd.DataFrame([{'multiplier': new_result}])
-                    self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
-                    
-                    lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
-                    self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
-                    
-                    ts = self.log_data(new_result, "result", next_p)
-                    logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
-                
-                current_val = self.extract_multiplier()
-                if current_val is not None and current_val != last_val:
-                    last_val = current_val
-                    if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
-                        logging.info(f"SIGNAL: CASH OUT! {current_val}x")
-                time.sleep(0.5)
+                    current_val = self.extract_multiplier()
+                    if current_val is not None and current_val != last_val:
+                        last_val = current_val
+                        if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
+                            logging.info(f"SIGNAL: CASH OUT! {current_val}x")
+                except Exception as e:
+                    logging.warning(f"Erreur mineure dans la boucle : {e}")
+                    # Si l'erreur est grave (ex: session Chrome perdue), on laisse remonter pour redémarrer
+                    if "session" in str(e).lower() or "disconnected" in str(e).lower():
+                        raise e
+                time.sleep(1) # Augmenté à 1s pour économiser le CPU
         finally:
-            if hasattr(self, 'driver'): self.driver.quit()
+            if hasattr(self, 'driver'):
+                try: self.driver.quit()
+                except: pass
 
 if __name__ == "__main__":
     while True:
