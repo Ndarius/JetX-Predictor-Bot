@@ -112,22 +112,17 @@ class JetXBetpawaBot:
         chrome_options = Options()
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage") # Utilise /tmp au lieu de /dev/shm
+        chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
         
-        # Options critiques pour la stabilité sur Koyeb
         chrome_options.add_argument("--no-zygote")
         chrome_options.add_argument("--single-process")
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-setuid-sandbox")
-        chrome_options.add_argument("--remote-debugging-port=9222")
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
         
-        # Forcer l'utilisation de /tmp pour le profil utilisateur
-        user_data_dir = "/tmp/chrome-user-data-" + str(time.time())
-        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
-        
+        # Utiliser Chromium par défaut
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
         chrome_options.binary_location = chrome_bin
         
@@ -142,6 +137,15 @@ class JetXBetpawaBot:
             logging.info("Chromium démarré avec succès.")
         except Exception as e:
             logging.error(f"Échec critique Selenium : {e}")
+            # Fallback si le chemin environnement est incorrect
+            if chrome_bin != "/usr/bin/chromium":
+                logging.info("Tentative de secours avec /usr/bin/chromium...")
+                chrome_options.binary_location = "/usr/bin/chromium"
+                try:
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    logging.info("Chromium démarré avec le chemin de secours.")
+                    return
+                except: pass
             raise e
             
         self.wait = WebDriverWait(self.driver, 45)
