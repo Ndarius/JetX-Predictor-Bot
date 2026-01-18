@@ -126,21 +126,36 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--no-default-browser-check")
         chrome_options.add_argument("--memory-pressure-off")
         chrome_options.add_argument("--blink-settings=imagesEnabled=false") # Désactiver les images pour sauver de la RAM
+        chrome_options.add_argument("--disable-background-networking")
+        chrome_options.add_argument("--disable-sync")
+        chrome_options.add_argument("--disable-translate")
+        chrome_options.add_argument("--metrics-recording-only")
+        chrome_options.add_argument("--safebrowsing-disable-auto-update")
         
         # Utiliser le binaire système s'il existe
-        for path in ["/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium"]:
-            if os.path.exists(path):
-                chrome_options.binary_location = path
-                break
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN")
+        if chrome_bin and os.path.exists(chrome_bin):
+            chrome_options.binary_location = chrome_bin
+        else:
+            for path in ["/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium"]:
+                if os.path.exists(path):
+                    chrome_options.binary_location = path
+                    break
         
         try:
-            # Tenter de démarrer sans webdriver-manager pour économiser de la RAM et éviter les téléchargements
-            self.driver = webdriver.Chrome(options=chrome_options)
+            # Tenter de démarrer avec le service système si possible
+            driver_path = os.environ.get("CHROMEDRIVER_PATH")
+            if driver_path and os.path.exists(driver_path):
+                service = ChromeService(executable_path=driver_path)
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                self.driver = webdriver.Chrome(options=chrome_options)
             logging.info("Chrome démarré avec le driver système.")
         except Exception as e:
             logging.warning(f"Échec driver système, tentative avec WebDriver Manager : {e}")
             try:
                 from webdriver_manager.chrome import ChromeDriverManager
+                # On force une version stable pour éviter les erreurs de téléchargement
                 driver_path = ChromeDriverManager().install()
                 service = ChromeService(executable_path=driver_path)
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
