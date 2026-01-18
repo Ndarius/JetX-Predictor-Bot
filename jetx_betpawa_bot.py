@@ -54,7 +54,6 @@ class JetXBetpawaBot:
             self.strategy = StatisticalStrategy(margin_factor=self.margin_factor)
 
     def get_db_connection(self):
-        # Prioritize DATABASE_URL if provided by Koyeb/Neon
         db_url = os.environ.get('DATABASE_URL')
         if db_url:
             if ("neon.tech" in db_url or "koyeb.app" in db_url) and "options=endpoint%3D" not in db_url:
@@ -71,7 +70,6 @@ class JetXBetpawaBot:
         port = os.environ.get('DATABASE_PORT', '5432')
         endpoint_id = host.split('.')[0] if host else ''
         
-        # Direct parameters connection with explicit SSL
         return psycopg2.connect(
             host=host,
             user=user,
@@ -98,7 +96,6 @@ class JetXBetpawaBot:
             ''')
             conn.commit()
             
-            # Charger l'historique existant
             cur.execute("SELECT multiplier FROM jetx_logs WHERE type='result' ORDER BY timestamp ASC")
             rows = cur.fetchall()
             self.full_history = [row[0] for row in rows]
@@ -118,51 +115,65 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
-        # Optimisations pour environnements à ressources limitées (Koyeb)
+        
+        # Optimisations agressives pour la mémoire
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-infobars")
-        chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument("--disable-notifications")
+        chrome_options.add_argument("--disable-popup-blocking")
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false") # Désactiver les images pour économiser la RAM
+        chrome_options.add_argument("--memory-pressure-thresholds=1,2")
         
-        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN")
-        if chrome_bin:
-            chrome_options.binary_location = chrome_bin
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/google-chrome-stable")
+        chrome_options.binary_location = chrome_bin
+        
+        driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
         
         try:
-            from webdriver_manager.chrome import ChromeDriverManager
-            driver_path = ChromeDriverManager().install()
-            service = ChromeService(executable_path=driver_path)
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            self.driver.set_page_load_timeout(90)
+            # Utiliser le driver système en priorité pour éviter les timeouts de téléchargement
+            if os.path.exists(driver_path):
+                service = ChromeService(executable_path=driver_path)
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                logging.info("Driver système non trouvé, tentative avec webdriver-manager...")
+                from webdriver_manager.chrome import ChromeDriverManager
+                driver_path = ChromeDriverManager().install()
+                service = ChromeService(executable_path=driver_path)
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            
+            self.driver.set_page_load_timeout(60)
+            self.driver.set_script_timeout(60)
             logging.info("Chrome démarré avec succès.")
         except Exception as e:
-            logging.error(f"Erreur Selenium (tentative avec options par défaut) : {e}")
-            try:
-                self.driver = webdriver.Chrome(options=chrome_options)
-            except Exception as e2:
-                logging.error(f"Échec critique Selenium : {e2}")
-                raise e2
+            logging.error(f"Échec critique Selenium : {e}")
+            raise e
             
-        self.wait = WebDriverWait(self.driver, 45)
+        self.wait = WebDriverWait(self.driver, 30)
 
     def login(self):
         logging.info(f"Connexion à {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(10)
+            time.sleep(15) # Attente plus longue pour le chargement initial
+            
             if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source:
+                logging.info("Déjà connecté ou page de dépôt détectée.")
                 return True
             
             login_trigger = self.selectors['login']['login_trigger']
             self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
-            time.sleep(3)
+            time.sleep(5)
+            
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['phone_input']).send_keys(self.auth['phone'])
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
-            time.sleep(10)
+            
+            time.sleep(15)
             return True
         except Exception as e:
             logging.error(f"Erreur login : {e}")
-            return False
+            # On tente de continuer quand même au cas où la page est chargée
+            return "jetx" in self.driver.current_url.lower()
 
     def log_data(self, multiplier, data_type="live", prediction=None):
         try:
@@ -205,33 +216,49 @@ class JetXBetpawaBot:
         except: return []
 
     def run(self):
-        if not self.login(): return
-        logging.info("Surveillance active...")
         try:
+            if not self.login():
+                logging.warning("Login peut-être échoué, tentative de surveillance quand même...")
+            
+            logging.info("Surveillance active...")
             last_val = None
+            consecutive_errors = 0
+            
             while True:
-                visual_history = self.extract_history()
-                if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
-                    new_result = visual_history[-1]
-                    self.full_history.append(new_result)
+                try:
+                    visual_history = self.extract_history()
+                    if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
+                        new_result = visual_history[-1]
+                        self.full_history.append(new_result)
+                        
+                        new_row = pd.DataFrame([{'multiplier': new_result}])
+                        self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
+                        
+                        lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
+                        self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
+                        
+                        ts = self.log_data(new_result, "result", next_p)
+                        logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
                     
-                    new_row = pd.DataFrame([{'multiplier': new_result}])
-                    self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
+                    current_val = self.extract_multiplier()
+                    if current_val is not None and current_val != last_val:
+                        last_val = current_val
+                        if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
+                            logging.info(f"SIGNAL: CASH OUT! {current_val}x")
                     
-                    lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
-                    self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
-                    
-                    ts = self.log_data(new_result, "result", next_p)
-                    logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
-                
-                current_val = self.extract_multiplier()
-                if current_val is not None and current_val != last_val:
-                    last_val = current_val
-                    if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
-                        logging.info(f"SIGNAL: CASH OUT! {current_val}x")
-                time.sleep(0.5)
+                    consecutive_errors = 0
+                    time.sleep(1) # Augmenter légèrement le sleep pour économiser le CPU
+                except Exception as e:
+                    consecutive_errors += 1
+                    logging.error(f"Erreur boucle : {e}")
+                    if consecutive_errors > 10:
+                        raise e
+                    time.sleep(5)
         finally:
-            if hasattr(self, 'driver'): self.driver.quit()
+            if hasattr(self, 'driver'):
+                try:
+                    self.driver.quit()
+                except: pass
 
 if __name__ == "__main__":
     while True:
@@ -240,4 +267,6 @@ if __name__ == "__main__":
             bot.run()
         except Exception as e:
             logging.error(f"Crash : {e}")
-            time.sleep(10)
+            # Nettoyage des processus Chrome orphelins pour éviter l'OOM
+            os.system("pkill -f chrome || true")
+            time.sleep(20)

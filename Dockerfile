@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y \
     libpangocairo-1.0-0 \
     libpango-1.0-0 \
     chromium-driver \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Google Chrome
@@ -58,6 +59,7 @@ EXPOSE 8000
 ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV GOOGLE_CHROME_BIN=/usr/bin/google-chrome-stable
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Run the start script
 CMD ["./start.sh"]
