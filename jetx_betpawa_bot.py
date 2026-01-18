@@ -118,23 +118,31 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
-        chrome_options.add_argument("--single-process")
-        chrome_options.add_argument("--no-zygote")
-        chrome_options.binary_location = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/google-chrome-stable")
+        # Optimisations pour environnements à ressources limitées (Koyeb)
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-infobars")
+        chrome_options.add_argument("--remote-debugging-port=9222")
+        
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN")
+        if chrome_bin:
+            chrome_options.binary_location = chrome_bin
         
         try:
             from webdriver_manager.chrome import ChromeDriverManager
-            from webdriver_manager.core.os_manager import ChromeType
-            driver_path = ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install()
+            driver_path = ChromeDriverManager().install()
             service = ChromeService(executable_path=driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            self.driver.set_page_load_timeout(60)
-            logging.info("Chrome démarré.")
+            self.driver.set_page_load_timeout(90)
+            logging.info("Chrome démarré avec succès.")
         except Exception as e:
-            logging.error(f"Erreur Selenium : {e}")
-            self.driver = webdriver.Chrome(options=chrome_options)
+            logging.error(f"Erreur Selenium (tentative avec options par défaut) : {e}")
+            try:
+                self.driver = webdriver.Chrome(options=chrome_options)
+            except Exception as e2:
+                logging.error(f"Échec critique Selenium : {e2}")
+                raise e2
             
-        self.wait = WebDriverWait(self.driver, 30)
+        self.wait = WebDriverWait(self.driver, 45)
 
     def login(self):
         logging.info(f"Connexion à {self.url}")
