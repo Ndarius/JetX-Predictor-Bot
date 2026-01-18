@@ -54,6 +54,7 @@ class JetXBetpawaBot:
             self.strategy = StatisticalStrategy(margin_factor=self.margin_factor)
 
     def get_db_connection(self):
+        # Prioritize DATABASE_URL if provided by Koyeb/Neon
         db_url = os.environ.get('DATABASE_URL')
         if db_url:
             if ("neon.tech" in db_url or "koyeb.app" in db_url) and "options=endpoint%3D" not in db_url:
@@ -70,6 +71,7 @@ class JetXBetpawaBot:
         port = os.environ.get('DATABASE_PORT', '5432')
         endpoint_id = host.split('.')[0] if host else ''
         
+        # Direct parameters connection with explicit SSL
         return psycopg2.connect(
             host=host,
             user=user,
@@ -96,6 +98,7 @@ class JetXBetpawaBot:
             ''')
             conn.commit()
             
+            # Charger l'historique existant
             cur.execute("SELECT multiplier FROM jetx_logs WHERE type='result' ORDER BY timestamp ASC")
             rows = cur.fetchall()
             self.full_history = [row[0] for row in rows]
@@ -110,66 +113,61 @@ class JetXBetpawaBot:
 
     def setup_selenium(self):
         chrome_options = Options()
-        # Utilisation du mode headless classique (souvent plus stable sur Koyeb)
-        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
-        
-        # Options de compatibilité maximale
-        chrome_options.add_argument("--disable-setuid-sandbox")
-        chrome_options.add_argument("--no-zygote")
-        chrome_options.add_argument("--single-process")
+        # Optimisations agressives pour Koyeb (RAM limitée)
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument("--disable-dev-tools")
+        chrome_options.add_argument("--no-first-run")
+        chrome_options.add_argument("--no-default-browser-check")
+        chrome_options.add_argument("--memory-pressure-off")
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false") # Désactiver les images pour sauver de la RAM
         
-        # Désactiver les fonctions gourmandes
-        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-        
-        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
-        chrome_options.binary_location = chrome_bin
-        
-        driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
-        
-        logging.info(f"Démarrage de Chromium ({chrome_bin})...")
+        # Utiliser le binaire système s'il existe
+        for path in ["/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium"]:
+            if os.path.exists(path):
+                chrome_options.binary_location = path
+                break
         
         try:
-            service = ChromeService(executable_path=driver_path)
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            self.driver.set_page_load_timeout(120)
-            logging.info("Chromium démarré avec succès.")
+            # Tenter de démarrer sans webdriver-manager pour économiser de la RAM et éviter les téléchargements
+            self.driver = webdriver.Chrome(options=chrome_options)
+            logging.info("Chrome démarré avec le driver système.")
         except Exception as e:
-            logging.error(f"Échec critique Selenium : {e}")
-            raise e
+            logging.warning(f"Échec driver système, tentative avec WebDriver Manager : {e}")
+            try:
+                from webdriver_manager.chrome import ChromeDriverManager
+                driver_path = ChromeDriverManager().install()
+                service = ChromeService(executable_path=driver_path)
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                logging.info("Chrome démarré avec WebDriver Manager.")
+            except Exception as e2:
+                logging.error(f"Échec critique Selenium : {e2}")
+                raise e2
             
-        self.wait = WebDriverWait(self.driver, 45)
+        self.driver.set_page_load_timeout(120)
+        self.wait = WebDriverWait(self.driver, 60)
 
     def login(self):
-        logging.info(f"Accès à {self.url}")
+        logging.info(f"Connexion à {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(20)
-            
+            time.sleep(10)
             if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source:
-                logging.info("Déjà connecté.")
                 return True
             
-            try:
-                login_trigger = self.selectors['login']['login_trigger']
-                self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
-                time.sleep(5)
-                
-                self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['phone_input']).send_keys(self.auth['phone'])
-                self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
-                self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
-                
-                time.sleep(20)
-            except:
-                logging.warning("Échec des étapes de login, vérification de l'URL...")
-            
-            return "jetx" in self.driver.current_url.lower()
+            login_trigger = self.selectors['login']['login_trigger']
+            self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
+            time.sleep(3)
+            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['phone_input']).send_keys(self.auth['phone'])
+            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
+            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
+            time.sleep(10)
+            return True
         except Exception as e:
             logging.error(f"Erreur login : {e}")
             return False
@@ -215,49 +213,33 @@ class JetXBetpawaBot:
         except: return []
 
     def run(self):
+        if not self.login(): return
+        logging.info("Surveillance active...")
         try:
-            if not self.login():
-                logging.warning("Login non confirmé, début de surveillance...")
-            
-            logging.info("Surveillance active...")
             last_val = None
-            consecutive_errors = 0
-            
             while True:
-                try:
-                    visual_history = self.extract_history()
-                    if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
-                        new_result = visual_history[-1]
-                        self.full_history.append(new_result)
-                        
-                        new_row = pd.DataFrame([{'multiplier': new_result}])
-                        self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
-                        
-                        lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
-                        self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
-                        
-                        ts = self.log_data(new_result, "result", next_p)
-                        logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
+                visual_history = self.extract_history()
+                if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
+                    new_result = visual_history[-1]
+                    self.full_history.append(new_result)
                     
-                    current_val = self.extract_multiplier()
-                    if current_val is not None and current_val != last_val:
-                        last_val = current_val
-                        if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
-                            logging.info(f"SIGNAL: CASH OUT! {current_val}x")
+                    new_row = pd.DataFrame([{'multiplier': new_result}])
+                    self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
                     
-                    consecutive_errors = 0
-                    time.sleep(1)
-                except Exception as e:
-                    consecutive_errors += 1
-                    logging.error(f"Erreur boucle : {e}")
-                    if consecutive_errors > 20:
-                        raise e
-                    time.sleep(5)
+                    lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
+                    self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
+                    
+                    ts = self.log_data(new_result, "result", next_p)
+                    logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
+                
+                current_val = self.extract_multiplier()
+                if current_val is not None and current_val != last_val:
+                    last_val = current_val
+                    if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
+                        logging.info(f"SIGNAL: CASH OUT! {current_val}x")
+                time.sleep(0.5)
         finally:
-            if hasattr(self, 'driver'):
-                try:
-                    self.driver.quit()
-                except: pass
+            if hasattr(self, 'driver'): self.driver.quit()
 
 if __name__ == "__main__":
     while True:
@@ -266,6 +248,4 @@ if __name__ == "__main__":
             bot.run()
         except Exception as e:
             logging.error(f"Crash : {e}")
-            os.system("pkill -9 -f chromium || true")
-            os.system("pkill -9 -f chromedriver || true")
-            time.sleep(30)
+            time.sleep(10)
