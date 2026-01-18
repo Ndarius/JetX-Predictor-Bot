@@ -7,12 +7,10 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     unzip \
     curl \
-    libglib2.0-0 \
+    chromium \
+    chromium-driver \
+    procps \
     libnss3 \
-    libfontconfig1 \
-    libxrender1 \
-    libxtst6 \
-    libxi6 \
     libatk1.0-0 \
     libatk-bridge2.0-0 \
     libcups2 \
@@ -23,17 +21,6 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libgbm1 \
     libasound2 \
-    libpangocairo-1.0-0 \
-    libpango-1.0-0 \
-    chromium-driver \
-    procps \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Google Chrome
-RUN curl -sSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -58,7 +45,7 @@ EXPOSE 8000
 # Set environment variables
 ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
-ENV GOOGLE_CHROME_BIN=/usr/bin/google-chrome-stable
+ENV GOOGLE_CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Run the start script

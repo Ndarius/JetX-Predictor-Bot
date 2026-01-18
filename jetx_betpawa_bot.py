@@ -116,70 +116,68 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
         
-        # Optimisations pour la mémoire et la stabilité
+        # Optimisations extrêmes pour Koyeb
         chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-infobars")
-        chrome_options.add_argument("--disable-notifications")
-        chrome_options.add_argument("--disable-popup-blocking")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        chrome_options.add_argument("--disable-dev-tools")
+        chrome_options.add_argument("--no-zygote")
+        chrome_options.add_argument("--single-process")
+        chrome_options.add_argument("--remote-debugging-port=9222")
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
         
-        # Désactiver le sandbox pour éviter certains problèmes de communication inter-processus
-        chrome_options.add_argument("--no-zygote")
-        chrome_options.add_argument("--single-process") # Optionnel, peut aider sur Koyeb
-        
-        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/google-chrome-stable")
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
         chrome_options.binary_location = chrome_bin
         
         driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
         
+        logging.info(f"Démarrage de Chromium ({chrome_bin}) avec le driver {driver_path}...")
+        
         try:
-            # On utilise le driver système directement pour éviter les timeouts de webdriver-manager
             service = ChromeService(executable_path=driver_path)
-            # Augmenter le timeout de connexion au driver
+            # On utilise un timeout de service plus long
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             
-            # Timeouts plus généreux pour le réseau
             self.driver.set_page_load_timeout(120)
             self.driver.set_script_timeout(120)
-            logging.info("Chrome démarré avec succès.")
+            logging.info("Chromium démarré avec succès.")
         except Exception as e:
             logging.error(f"Échec critique Selenium : {e}")
-            # Tentative de secours sans service explicite
-            try:
-                self.driver = webdriver.Chrome(options=chrome_options)
-            except Exception as e2:
-                logging.error(f"Échec total Selenium : {e2}")
-                raise e2
+            raise e
             
         self.wait = WebDriverWait(self.driver, 45)
 
     def login(self):
-        logging.info(f"Connexion à {self.url}")
+        logging.info(f"Accès à {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(20) # Attente longue pour le chargement initial
+            # Attente progressive
+            for i in range(4):
+                time.sleep(10)
+                logging.info(f"Attente chargement... ({i+1}/4)")
+                if "jetx" in self.driver.current_url.lower() or "Deposit" in self.driver.page_source:
+                    break
             
             if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source:
-                logging.info("Déjà connecté ou page de dépôt détectée.")
+                logging.info("Déjà connecté.")
                 return True
             
-            login_trigger = self.selectors['login']['login_trigger']
-            self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
-            time.sleep(5)
+            try:
+                login_trigger = self.selectors['login']['login_trigger']
+                self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
+                time.sleep(5)
+                
+                self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['phone_input']).send_keys(self.auth['phone'])
+                self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
+                self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
+                
+                time.sleep(20)
+            except:
+                logging.warning("Échec des étapes de login, vérification de l'URL...")
             
-            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['phone_input']).send_keys(self.auth['phone'])
-            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
-            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
-            
-            time.sleep(20)
-            return True
+            return "jetx" in self.driver.current_url.lower()
         except Exception as e:
             logging.error(f"Erreur login : {e}")
-            # On vérifie si on est quand même sur la bonne page
-            try:
-                return "jetx" in self.driver.current_url.lower()
-            except:
-                return False
+            return False
 
     def log_data(self, multiplier, data_type="live", prediction=None):
         try:
@@ -224,7 +222,7 @@ class JetXBetpawaBot:
     def run(self):
         try:
             if not self.login():
-                logging.warning("Login peut-être échoué, tentative de surveillance quand même...")
+                logging.warning("Login non confirmé, début de surveillance...")
             
             logging.info("Surveillance active...")
             last_val = None
@@ -257,7 +255,7 @@ class JetXBetpawaBot:
                 except Exception as e:
                     consecutive_errors += 1
                     logging.error(f"Erreur boucle : {e}")
-                    if consecutive_errors > 15:
+                    if consecutive_errors > 20:
                         raise e
                     time.sleep(5)
         finally:
@@ -273,7 +271,6 @@ if __name__ == "__main__":
             bot.run()
         except Exception as e:
             logging.error(f"Crash : {e}")
-            # Nettoyage radical
-            os.system("pkill -9 -f chrome || true")
+            os.system("pkill -9 -f chromium || true")
             os.system("pkill -9 -f chromedriver || true")
             time.sleep(30)
