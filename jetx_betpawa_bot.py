@@ -116,13 +116,16 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
         
-        # Optimisations agressives pour la mémoire
+        # Optimisations pour la mémoire et la stabilité
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-infobars")
         chrome_options.add_argument("--disable-notifications")
         chrome_options.add_argument("--disable-popup-blocking")
-        chrome_options.add_argument("--blink-settings=imagesEnabled=false") # Désactiver les images pour économiser la RAM
-        chrome_options.add_argument("--memory-pressure-thresholds=1,2")
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+        
+        # Désactiver le sandbox pour éviter certains problèmes de communication inter-processus
+        chrome_options.add_argument("--no-zygote")
+        chrome_options.add_argument("--single-process") # Optionnel, peut aider sur Koyeb
         
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/google-chrome-stable")
         chrome_options.binary_location = chrome_bin
@@ -130,31 +133,31 @@ class JetXBetpawaBot:
         driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
         
         try:
-            # Utiliser le driver système en priorité pour éviter les timeouts de téléchargement
-            if os.path.exists(driver_path):
-                service = ChromeService(executable_path=driver_path)
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                logging.info("Driver système non trouvé, tentative avec webdriver-manager...")
-                from webdriver_manager.chrome import ChromeDriverManager
-                driver_path = ChromeDriverManager().install()
-                service = ChromeService(executable_path=driver_path)
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            # On utilise le driver système directement pour éviter les timeouts de webdriver-manager
+            service = ChromeService(executable_path=driver_path)
+            # Augmenter le timeout de connexion au driver
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
             
-            self.driver.set_page_load_timeout(60)
-            self.driver.set_script_timeout(60)
+            # Timeouts plus généreux pour le réseau
+            self.driver.set_page_load_timeout(120)
+            self.driver.set_script_timeout(120)
             logging.info("Chrome démarré avec succès.")
         except Exception as e:
             logging.error(f"Échec critique Selenium : {e}")
-            raise e
+            # Tentative de secours sans service explicite
+            try:
+                self.driver = webdriver.Chrome(options=chrome_options)
+            except Exception as e2:
+                logging.error(f"Échec total Selenium : {e2}")
+                raise e2
             
-        self.wait = WebDriverWait(self.driver, 30)
+        self.wait = WebDriverWait(self.driver, 45)
 
     def login(self):
         logging.info(f"Connexion à {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(15) # Attente plus longue pour le chargement initial
+            time.sleep(20) # Attente longue pour le chargement initial
             
             if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source:
                 logging.info("Déjà connecté ou page de dépôt détectée.")
@@ -168,12 +171,15 @@ class JetXBetpawaBot:
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
             
-            time.sleep(15)
+            time.sleep(20)
             return True
         except Exception as e:
             logging.error(f"Erreur login : {e}")
-            # On tente de continuer quand même au cas où la page est chargée
-            return "jetx" in self.driver.current_url.lower()
+            # On vérifie si on est quand même sur la bonne page
+            try:
+                return "jetx" in self.driver.current_url.lower()
+            except:
+                return False
 
     def log_data(self, multiplier, data_type="live", prediction=None):
         try:
@@ -247,11 +253,11 @@ class JetXBetpawaBot:
                             logging.info(f"SIGNAL: CASH OUT! {current_val}x")
                     
                     consecutive_errors = 0
-                    time.sleep(1) # Augmenter légèrement le sleep pour économiser le CPU
+                    time.sleep(1)
                 except Exception as e:
                     consecutive_errors += 1
                     logging.error(f"Erreur boucle : {e}")
-                    if consecutive_errors > 10:
+                    if consecutive_errors > 15:
                         raise e
                     time.sleep(5)
         finally:
@@ -267,6 +273,7 @@ if __name__ == "__main__":
             bot.run()
         except Exception as e:
             logging.error(f"Crash : {e}")
-            # Nettoyage des processus Chrome orphelins pour éviter l'OOM
-            os.system("pkill -f chrome || true")
-            time.sleep(20)
+            # Nettoyage radical
+            os.system("pkill -9 -f chrome || true")
+            os.system("pkill -9 -f chromedriver || true")
+            time.sleep(30)

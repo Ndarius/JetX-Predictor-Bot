@@ -3,12 +3,12 @@ import pandas as pd
 import psycopg2
 import os
 from datetime import datetime
+import time
 
 # Configuration
-st.set_page_config(page_title="JetX Predictor Pro", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="JetX Predict Pro", layout="wide", page_icon="🚀")
 
 def get_db_connection():
-    # Prioritize DATABASE_URL if provided by Koyeb/Neon
     db_url = os.environ.get('DATABASE_URL')
     if db_url:
         if ("neon.tech" in db_url or "koyeb.app" in db_url) and "options=endpoint%3D" not in db_url:
@@ -25,7 +25,6 @@ def get_db_connection():
     port = os.environ.get('DATABASE_PORT', '5432')
     endpoint_id = host.split('.')[0] if host else ''
     
-    # Direct parameters connection with explicit SSL
     return psycopg2.connect(
         host=host,
         user=user,
@@ -36,20 +35,29 @@ def get_db_connection():
         options=f"-c endpoint={endpoint_id}"
     )
 
-@st.cache_data(ttl=1)
+@st.cache_data(ttl=2)
 def load_data():
     try:
         conn = get_db_connection()
-        df = pd.read_sql_query("SELECT * FROM jetx_logs ORDER BY timestamp DESC LIMIT 100", conn)
+        # Utilisation de fetchall pour éviter l'avertissement pandas sur DBAPI2
+        cur = conn.cursor()
+        cur.execute("SELECT id, timestamp, multiplier, type, prediction FROM jetx_logs ORDER BY timestamp DESC LIMIT 100")
+        rows = cur.fetchall()
+        colnames = [desc[0] for desc in cur.description]
+        df = pd.DataFrame(rows, columns=colnames)
+        cur.close()
         conn.close()
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+        if not df.empty:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
         return df
     except Exception as e:
+        st.sidebar.error(f"Erreur DB: {e}")
         return pd.DataFrame()
 
 st.title("🚀 JetX Predictor Pro")
 st.sidebar.header("⚙️ Configuration")
-refresh_rate = st.sidebar.slider("Rafraîchissement (s)", 1, 10, 2)
+refresh_rate = st.sidebar.slider("Rafraîchissement (s)", 1, 10, 3)
 
 df = load_data()
 
@@ -88,6 +96,5 @@ else:
                 """, unsafe_allow_html=True)
 
 # Auto-refresh
-import time
 time.sleep(refresh_rate)
 st.rerun()
