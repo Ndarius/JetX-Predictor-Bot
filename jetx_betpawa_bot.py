@@ -58,21 +58,12 @@ class JetXBetpawaBot:
         user = os.environ.get('DATABASE_USER', '')
         password = os.environ.get('DATABASE_PASSWORD', '')
         dbname = os.environ.get('DATABASE_NAME', '')
+        # Extract the first part of the host (e.g., ep-green-glade-ahx9joi6)
         endpoint_id = host.split('.')[0] if host else ''
         
-        # Neon recommended format: endpoint_id$username
-        # This is the most reliable way to pass the endpoint ID
-        if endpoint_id and '$' not in user:
-            user = f"{endpoint_id}${user}"
-            
-        return psycopg2.connect(
-            host=host,
-            user=user,
-            password=password,
-            database=dbname,
-            port=os.environ.get('DATABASE_PORT', 5432),
-            sslmode='require'
-        )
+        # Use the full connection string format required by Neon/Koyeb
+        conn_str = f"postgresql://{user}:{password}@{host}/{dbname}?sslmode=require&options=endpoint%3D{endpoint_id}"
+        return psycopg2.connect(conn_str)
 
     def setup_storage(self):
         logging.info("Connexion à PostgreSQL...")

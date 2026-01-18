@@ -10,19 +10,14 @@ st.set_page_config(page_title="JetX Predictor Pro", layout="wide", page_icon="ðŸ
 def get_db_connection():
     host = os.environ.get('DATABASE_HOST', '')
     user = os.environ.get('DATABASE_USER', '')
+    password = os.environ.get('DATABASE_PASSWORD', '')
+    dbname = os.environ.get('DATABASE_NAME', '')
+    # Extract the first part of the host (e.g., ep-green-glade-ahx9joi6)
     endpoint_id = host.split('.')[0] if host else ''
     
-    if endpoint_id and '$' not in user:
-        user = f"{endpoint_id}${user}"
-        
-    return psycopg2.connect(
-        host=host,
-        user=user,
-        password=os.environ.get('DATABASE_PASSWORD'),
-        database=os.environ.get('DATABASE_NAME'),
-        port=os.environ.get('DATABASE_PORT', 5432),
-        sslmode='require'
-    )
+    # Use the full connection string format required by Neon/Koyeb
+    conn_str = f"postgresql://{user}:{password}@{host}/{dbname}?sslmode=require&options=endpoint%3D{endpoint_id}"
+    return psycopg2.connect(conn_str)
 
 @st.cache_data(ttl=1)
 def load_data():
