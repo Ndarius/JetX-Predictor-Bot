@@ -19,6 +19,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 from strategies import StatisticalStrategy, MartingaleStrategy
 
 # Configuration du logging
@@ -127,6 +128,19 @@ class JetXBetpawaBot:
             
         self.driver.set_page_load_timeout(60)
         self.wait = WebDriverWait(self.driver, 30)
+        self.actions = ActionChains(self.driver)
+
+    def human_type(self, element, text):
+        """Simule une saisie humaine touche par touche"""
+        element.click()
+        time.sleep(0.5)
+        for char in text:
+            element.send_keys(char)
+            time.sleep(0.1) # Petit délai entre chaque touche
+
+    def human_click(self, element):
+        """Simule un mouvement de souris et un clic physique"""
+        self.actions.move_to_element(element).pause(0.5).click().perform()
 
     def login(self):
         logging.info(f"Navigation directe vers la page de login : {self.url}")
@@ -139,65 +153,48 @@ class JetXBetpawaBot:
                 logging.info("Déjà connecté.")
                 return self.navigate_to_jetx()
             
-            # --- LOGIQUE DE SAISIE ROBUSTE ---
-            logging.info("Recherche des champs de saisie...")
+            # --- LOGIQUE DE CLIC PHYSIQUE ---
+            logging.info("Tentative de connexion via clics physiques...")
             
-            # 1. Vérifier si on est dans une iframe
             if len(self.driver.find_elements(By.TAG_NAME, "iframe")) > 0:
-                logging.info("Iframe détectée, tentative de basculement...")
                 self.driver.switch_to.frame(0)
 
-            # 2. Sélecteurs multiples pour le téléphone
-            phone_selectors = [
-                (By.NAME, "phoneNumber"),
-                (By.CSS_SELECTOR, "input[type='tel']"),
-                (By.CSS_SELECTOR, "input[placeholder*='number']"),
-                (By.XPATH, "//input[contains(@name, 'phone')]")
-            ]
-            
+            # Recherche du champ téléphone
             phone_field = None
-            for by, sel in phone_selectors:
+            for by, sel in [(By.NAME, "phoneNumber"), (By.CSS_SELECTOR, "input[type='tel']"), (By.XPATH, "//input[contains(@name, 'phone')]")]:
                 try:
                     phone_field = self.wait.until(EC.visibility_of_element_located((by, sel)))
                     if phone_field: break
                 except: continue
             
-            if not phone_field:
-                logging.error("Champ téléphone non trouvé, tentative via JS...")
-                self.driver.execute_script(f"document.querySelector('input[type=\"tel\"]').value = '{self.auth['phone']}';")
-            else:
+            if phone_field:
+                logging.info("Saisie du téléphone (mode humain)...")
+                self.human_click(phone_field)
                 phone_field.clear()
-                phone_field.send_keys(self.auth['phone'])
-
-            # 3. Sélecteurs multiples pour le PIN
-            pin_selectors = [
-                (By.NAME, "pincode"),
-                (By.CSS_SELECTOR, "input[type='password']"),
-                (By.CSS_SELECTOR, "input[placeholder*='PIN']"),
-                (By.XPATH, "//input[contains(@name, 'pin')]")
-            ]
+                self.human_type(phone_field, self.auth['phone'])
             
+            # Recherche du champ PIN
             pin_field = None
-            for by, sel in pin_selectors:
+            for by, sel in [(By.NAME, "pincode"), (By.CSS_SELECTOR, "input[type='password']"), (By.XPATH, "//input[contains(@name, 'pin')]")]:
                 try:
                     pin_field = self.driver.find_element(by, sel)
                     if pin_field: break
                 except: continue
             
-            if not pin_field:
-                self.driver.execute_script(f"document.querySelector('input[type=\"password\"]').value = '{self.auth['pin']}';")
-            else:
+            if pin_field:
+                logging.info("Saisie du PIN (mode humain)...")
+                self.human_click(pin_field)
                 pin_field.clear()
-                pin_field.send_keys(self.auth['pin'])
+                self.human_type(pin_field, self.auth['pin'])
 
-            # 4. Clic sur le bouton de validation
+            # Clic physique sur le bouton de validation
             try:
                 submit_btn = self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit'] | //button[@type='submit']")
-                self.driver.execute_script("arguments[0].click();", submit_btn)
-                logging.info("Bouton de login cliqué.")
+                logging.info("Clic physique sur le bouton de login...")
+                self.human_click(submit_btn)
             except:
-                logging.error("Bouton submit non trouvé, tentative via Enter...")
-                pin_field.send_keys("\n")
+                logging.error("Bouton submit non trouvé, validation via Enter...")
+                if pin_field: pin_field.send_keys(Keys.ENTER)
 
             self.driver.switch_to.default_content()
             time.sleep(12)
