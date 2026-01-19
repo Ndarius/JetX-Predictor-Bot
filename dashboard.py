@@ -38,6 +38,11 @@ st.markdown("""
 
 st.title("🚀 JetX Predictor Pro - Dashboard")
 
+# Debug Image
+if os.path.exists("debug_betpawa.png"):
+    with st.expander("🔍 Voir l'état du Bot (Debug)"):
+        st.image("debug_betpawa.png", caption="Capture d'écran du Bot sur Betpawa")
+
 # Connexion à la base de données
 def get_db_connection():
     db_url = os.environ.get('DATABASE_URL')

@@ -184,6 +184,10 @@ class JetXBetpawaBot:
             # Capture d'écran pour debug si besoin (optionnel)
             # self.driver.save_screenshot("/bot/debug_login.png")
             
+            # Capture d'écran pour debug
+            self.driver.save_screenshot("debug_betpawa.png")
+            logging.info("Capture d'écran de debug enregistrée sous debug_betpawa.png")
+            
             if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source or "Balance" in self.driver.page_source:
                 logging.info("Déjà connecté.")
                 return True
