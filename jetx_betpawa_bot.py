@@ -192,13 +192,30 @@ class JetXBetpawaBot:
                 logging.info("Déjà connecté.")
                 return True
             
-            login_trigger = self.selectors['login']['login_trigger']
-            self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
-            time.sleep(5)
-            
-            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['phone_input']).send_keys(self.auth['phone'])
-            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
-            self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
+            # Gestion du pop-up spécifique "Join Now or Log In"
+            try:
+                login_buttons = self.driver.find_elements(By.XPATH, "//button[contains(text(), 'LOGIN')] | //div[contains(text(), 'LOGIN')]")
+                if login_buttons:
+                    login_buttons[0].click()
+                    logging.info("Bouton LOGIN du pop-up cliqué.")
+                    time.sleep(5)
+            except:
+                pass
+
+            # Tentative de login classique si le pop-up n'était pas là ou n'a pas suffi
+            try:
+                phone_fields = self.driver.find_elements(By.CSS_SELECTOR, "input[name='phoneNumber'], input[type='tel']")
+                if phone_fields:
+                    phone_fields[0].send_keys(self.auth['phone'])
+                    pin_fields = self.driver.find_elements(By.CSS_SELECTOR, "input[name='pincode'], input[type='password']")
+                    if pin_fields:
+                        pin_fields[0].send_keys(self.auth['pin'])
+                        submit_buttons = self.driver.find_elements(By.CSS_SELECTOR, "input[type='submit'], button[type='submit']")
+                        if submit_buttons:
+                            submit_buttons[0].click()
+                            logging.info("Formulaire de login soumis.")
+            except Exception as e:
+                logging.error(f"Erreur lors du remplissage du formulaire : {e}")
             
             time.sleep(15) # Attente du chargement après login
             return True
