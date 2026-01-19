@@ -121,7 +121,8 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1280,720")
+        chrome_options.add_argument("--window-size=375,812") # Taille iPhone X (plus léger)
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1")
         
         # Optimisations agressives pour Koyeb (RAM limitée)
         chrome_options.add_argument("--disable-extensions")
@@ -138,6 +139,10 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--safebrowsing-disable-auto-update")
         
         # Forcer le binaire Chromium pour Koyeb
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--single-process") # Réduit drastiquement l'usage RAM (mais moins stable)
+        
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
         if os.path.exists(chrome_bin):
             chrome_options.binary_location = chrome_bin
@@ -172,9 +177,12 @@ class JetXBetpawaBot:
         logging.info(f"Connexion à {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(15) # Augmenté pour Koyeb
+            time.sleep(20) # Plus de temps pour charger la version mobile
             
-            if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source:
+            # Capture d'écran pour debug si besoin (optionnel)
+            # self.driver.save_screenshot("/bot/debug_login.png")
+            
+            if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source or "Balance" in self.driver.page_source:
                 logging.info("Déjà connecté.")
                 return True
             
