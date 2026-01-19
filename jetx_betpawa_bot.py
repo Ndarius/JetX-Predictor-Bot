@@ -101,15 +101,14 @@ class JetXBetpawaBot:
         chrome_options = Options()
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage") # CRUCIAL pour Docker sur Render
+        chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1280,720")
+        chrome_options.add_argument("--window-size=1920,1080")
         
-        # Optimisations supplémentaires pour la RAM
+        # Optimisations pour Render
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-software-rasterizer")
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-        chrome_options.add_argument("--remote-debugging-port=9222")
         
         # Utilisation des binaires système
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
@@ -117,56 +116,85 @@ class JetXBetpawaBot:
         
         if os.path.exists(chrome_bin):
             chrome_options.binary_location = chrome_bin
-            logging.info(f"Utilisation du binaire Chrome : {chrome_bin}")
         
         try:
-            logging.info(f"Démarrage de Chrome avec le driver : {driver_path}")
             service = ChromeService(executable_path=driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             logging.info("Chrome démarré avec succès.")
         except Exception as e:
-            logging.error(f"Échec critique Selenium : {e}")
-            # Tentative de secours
+            logging.error(f"Échec Selenium : {e}")
             try:
-                logging.info("Tentative de secours sans chemin de driver...")
                 self.driver = webdriver.Chrome(options=chrome_options)
-                logging.info("Chrome démarré avec succès (secours).")
             except Exception as e2:
                 logging.error(f"Échec total Selenium : {e2}")
                 raise e2
             
         self.driver.set_page_load_timeout(60)
-        self.wait = WebDriverWait(self.driver, 20)
+        self.wait = WebDriverWait(self.driver, 30)
 
     def login(self):
         logging.info(f"Navigation vers {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(10)
+            time.sleep(15) # Plus de temps pour le chargement initial
             self.driver.save_screenshot("debug_betpawa_initial.png")
             
             if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account"]):
                 logging.info("Déjà connecté.")
                 return self.navigate_to_jetx()
             
-            # Login
+            # 1. Gérer le pop-up JetX "Join Now or Log In"
+            logging.info("Recherche du bouton LOGIN dans le pop-up...")
             try:
-                login_btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '/login')] | //button[contains(., 'LOGIN')]")))
-                login_btn.click()
-                time.sleep(5)
+                # Sélecteurs spécifiques pour le bouton noir LOGIN du pop-up
+                popup_login_selectors = [
+                    "//button[contains(text(), 'LOGIN')]",
+                    "//div[contains(text(), 'LOGIN')]",
+                    "//button[contains(@class, 'login')]",
+                    "//div[contains(@class, 'login')]"
+                ]
                 
+                found_popup_btn = False
+                for selector in popup_login_selectors:
+                    try:
+                        btn = self.driver.find_element(By.XPATH, selector)
+                        if btn.is_displayed():
+                            # Tentative de clic via JavaScript pour plus de fiabilité sur les pop-ups
+                            self.driver.execute_script("arguments[0].click();", btn)
+                            logging.info(f"Bouton LOGIN du pop-up cliqué via JS ({selector}).")
+                            found_popup_btn = True
+                            break
+                    except: continue
+                
+                if not found_popup_btn:
+                    logging.info("Bouton LOGIN du pop-up non trouvé, tentative de clic sur le bouton LOGIN global.")
+                    global_login = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '/login')] | //button[contains(., 'LOGIN')]")))
+                    self.driver.execute_script("arguments[0].click();", global_login)
+                
+                time.sleep(8)
+                self.driver.save_screenshot("debug_betpawa_login_page.png")
+            except Exception as e:
+                logging.warning(f"Erreur lors du déclenchement du login : {e}")
+
+            # 2. Saisie des identifiants
+            logging.info("Saisie des identifiants...")
+            try:
                 phone_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='phoneNumber'], input[type='tel']")))
+                phone_field.clear()
                 phone_field.send_keys(self.auth['phone'])
                 
                 pin_field = self.driver.find_element(By.CSS_SELECTOR, "input[name='pincode'], input[type='password']")
+                pin_field.clear()
                 pin_field.send_keys(self.auth['pin'])
                 
-                self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit']").click()
-                logging.info("Login soumis.")
-                time.sleep(10)
+                submit_btn = self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit']")
+                self.driver.execute_script("arguments[0].click();", submit_btn)
+                logging.info("Formulaire de login soumis.")
+                
+                time.sleep(12)
                 self.driver.save_screenshot("debug_betpawa_after_login.png")
             except Exception as e:
-                logging.warning(f"Erreur pendant le login : {e}")
+                logging.error(f"Erreur lors de la saisie du formulaire : {e}")
 
             return self.navigate_to_jetx()
         except Exception as e:
@@ -176,8 +204,11 @@ class JetXBetpawaBot:
     def navigate_to_jetx(self):
         logging.info("Accès JetX...")
         try:
-            self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
-            time.sleep(10)
+            # Si on n'est pas déjà sur JetX, on y va
+            if "gameId=jetx" not in self.driver.current_url:
+                self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
+                time.sleep(10)
+            
             self.driver.save_screenshot("debug_betpawa_jetx_loaded.png")
             return True
         except:
@@ -250,8 +281,6 @@ class JetXBetpawaBot:
                     new_row = pd.DataFrame([{'multiplier': new_result}])
                     self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
                     lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
-                    self.current_prediction = {"lower": None, "upper": None, "confidence": 0, "next": None}
-                    # Correction : On s'assure que la prédiction est bien mise à jour
                     self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
                     ts = self.log_data(new_result, "result", next_p)
                     logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
