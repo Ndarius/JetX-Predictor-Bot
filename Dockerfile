@@ -40,10 +40,10 @@ RUN mkdir -p /bot && chmod 777 /bot
 RUN chmod +x start.sh
 
 # Expose port for Streamlit (if needed)
-EXPOSE 8000
+EXPOSE 10000
 
 # Set environment variables
-ENV PORT=8000
+ENV PORT=10000
 ENV PYTHONUNBUFFERED=1
 ENV GOOGLE_CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver

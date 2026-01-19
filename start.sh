@@ -3,19 +3,23 @@
 # Export paths for Chromium and Driver
 export GOOGLE_CHROME_BIN=${GOOGLE_CHROME_BIN:-/usr/bin/chromium}
 export CHROMEDRIVER_PATH=${CHROMEDRIVER_PATH:-/usr/bin/chromedriver}
-export PORT=${PORT:-8000}
+export PORT=${PORT:-10000}
 
-echo "--- Démarrage du Bot JetX (Mode Performance) ---"
-
-# Lancement d'un mini-serveur HTTP pour le Health Check de Koyeb (consomme < 5MB RAM)
-# Cela évite que Koyeb ne redémarre l'instance parce que le port 8000 est fermé
-python3 healthcheck.py &
+echo "--- Démarrage du Bot JetX avec Dashboard ---"
 
 # Nettoyage initial des processus pour libérer la RAM
 pkill -9 -f chromium || true
 pkill -9 -f streamlit || true
 
-echo "Surveillance active et Health Check démarré sur le port $PORT"
+# Lancement du Dashboard Streamlit en arrière-plan sur le port Render
+# On utilise --server.port pour que Render puisse faire le health check dessus
+streamlit run dashboard.py --server.port $PORT --server.address 0.0.0.0 &
 
-# Lancement du bot
+echo "Dashboard démarré sur le port $PORT"
+
+# Attendre un peu que le dashboard soit prêt
+sleep 5
+
+# Lancement du bot en premier plan
+echo "Lancement du bot de surveillance..."
 python3 jetx_betpawa_bot.py
