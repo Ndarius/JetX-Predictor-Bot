@@ -73,7 +73,7 @@ def load_data():
         return pd.DataFrame()
 
 # Debug Images Section
-debug_files = ["debug_betpawa.png", "debug_betpawa_initial.png", "debug_betpawa_after_login.png"]
+debug_files = ["debug_betpawa_initial.png", "debug_betpawa_login_page.png", "debug_betpawa_after_login.png", "debug_betpawa.png"]
 available_debug = [f for f in debug_files if os.path.exists(f)]
 
 if available_debug:

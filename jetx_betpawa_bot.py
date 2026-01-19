@@ -121,121 +121,116 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=375,812") # Taille iPhone X (plus léger)
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1")
+        # Utilisation d'une taille de fenêtre plus large pour correspondre à la capture de l'utilisateur
+        chrome_options.add_argument("--window-size=1920,1080") 
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
-        # Optimisations agressives pour Koyeb (RAM limitée)
+        # Optimisations
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-software-rasterizer")
         chrome_options.add_argument("--disable-dev-tools")
         chrome_options.add_argument("--no-first-run")
         chrome_options.add_argument("--no-default-browser-check")
-        chrome_options.add_argument("--memory-pressure-off")
-        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-        chrome_options.add_argument("--disable-background-networking")
-        chrome_options.add_argument("--disable-sync")
-        chrome_options.add_argument("--disable-translate")
-        chrome_options.add_argument("--metrics-recording-only")
-        chrome_options.add_argument("--safebrowsing-disable-auto-update")
-        
-        # Forcer le binaire Chromium pour Koyeb
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-setuid-sandbox")
-        chrome_options.add_argument("--remote-debugging-port=9222")
         
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
         if os.path.exists(chrome_bin):
             chrome_options.binary_location = chrome_bin
-            logging.info(f"Utilisation du binaire Chrome : {chrome_bin}")
         
         try:
-            # Tenter de démarrer avec le driver spécifié
             driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
             if os.path.exists(driver_path):
                 service = ChromeService(executable_path=driver_path)
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                logging.info(f"Chrome démarré avec le driver : {driver_path}")
             else:
                 self.driver = webdriver.Chrome(options=chrome_options)
-                logging.info("Chrome démarré avec le driver par défaut.")
         except Exception as e:
-            logging.warning(f"Échec driver système, tentative avec WebDriver Manager : {e}")
-            try:
-                from webdriver_manager.chrome import ChromeDriverManager
-                driver_path = ChromeDriverManager().install()
-                service = ChromeService(executable_path=driver_path)
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                logging.info("Chrome démarré avec WebDriver Manager.")
-            except Exception as e2:
-                logging.error(f"Échec critique Selenium : {e2}")
-                raise e2
+            logging.error(f"Échec Selenium : {e}")
+            raise e
             
         self.driver.set_page_load_timeout(120)
-        self.wait = WebDriverWait(self.driver, 60)
+        self.wait = WebDriverWait(self.driver, 30)
 
     def login(self):
-        logging.info(f"Connexion à {self.url}")
+        logging.info(f"Navigation vers {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(15)
+            time.sleep(10)
             
-            # Capture d'écran initiale pour debug
             self.driver.save_screenshot("debug_betpawa_initial.png")
             
-            if any(word in self.driver.page_source for word in ["Deposit", "Déposer", "Balance", "Solde"]):
+            if any(word in self.driver.page_source for word in ["Deposit", "Déposer", "Balance", "Solde", "Account"]):
                 logging.info("Déjà connecté.")
                 return True
             
-            # 1. Gérer le pop-up "Join Now or Log In"
-            logging.info("Recherche du pop-up de connexion...")
+            # 1. Gérer le pop-up initial "Join Now or Log In"
+            logging.info("Recherche du bouton LOGIN initial...")
             try:
-                modal_login_xpath = self.selectors['login'].get('modal_login_button', "//button[contains(text(), 'LOGIN')]")
-                modal_login = self.wait.until(EC.element_to_be_clickable((By.XPATH, modal_login_xpath)))
-                modal_login.click()
-                logging.info("Bouton LOGIN du pop-up cliqué.")
-                time.sleep(5)
-            except Exception as e:
-                logging.info(f"Pop-up non trouvé ou déjà fermé : {e}")
-
-            # 2. Remplir le formulaire de connexion
-            logging.info("Tentative de remplissage du formulaire de login...")
-            try:
-                # Attendre que le champ téléphone soit visible
-                phone_selector = self.selectors['login'].get('phone_input', "input[name='phoneNumber']")
-                phone_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, phone_selector)))
+                # On cherche le bouton LOGIN dans le pop-up ou en haut de page
+                login_trigger_selectors = [
+                    "//button[contains(text(), 'LOGIN')]",
+                    "//div[contains(text(), 'LOGIN')]",
+                    "//a[contains(@href, '/login')]",
+                    "button[data-test-id='login-button']"
+                ]
                 
-                # Nettoyer et saisir le téléphone
-                phone_field.clear()
-                phone_field.send_keys(self.auth['phone'])
-                logging.info(f"Numéro de téléphone saisi : {self.auth['phone']}")
+                found_trigger = False
+                for selector in login_trigger_selectors:
+                    try:
+                        if selector.startswith("//"):
+                            btn = self.driver.find_element(By.XPATH, selector)
+                        else:
+                            btn = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        
+                        if btn.is_displayed():
+                            btn.click()
+                            logging.info(f"Bouton de déclenchement login cliqué ({selector}).")
+                            found_trigger = True
+                            break
+                    except: continue
+                
+                if not found_trigger:
+                    logging.info("Aucun bouton de login trouvé, on vérifie si on est déjà sur la page de login.")
+                
+                time.sleep(5)
+                self.driver.save_screenshot("debug_betpawa_login_page.png")
+            except Exception as e:
+                logging.info(f"Erreur lors de la recherche du bouton login : {e}")
 
-                # Saisir le PIN
-                pin_selector = self.selectors['login'].get('pin_input', "input[name='pincode']")
-                pin_field = self.driver.find_element(By.CSS_SELECTOR, pin_selector)
+            # 2. Remplir le formulaire (correspondant à la capture de l'utilisateur)
+            logging.info("Saisie des identifiants...")
+            try:
+                # Champ téléphone
+                phone_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='phoneNumber'], input[type='tel']")))
+                phone_field.clear()
+                # On envoie le numéro (Betpawa gère souvent le préfixe via un élément séparé comme vu sur la capture)
+                phone_field.send_keys(self.auth['phone'])
+                logging.info(f"Numéro saisi.")
+
+                # Champ PIN
+                pin_field = self.driver.find_element(By.CSS_SELECTOR, "input[name='pincode'], input[type='password']")
                 pin_field.clear()
                 pin_field.send_keys(self.auth['pin'])
-                logging.info("Code PIN saisi.")
+                logging.info("PIN saisi.")
 
-                # Cliquer sur le bouton de soumission
-                submit_selector = self.selectors['login'].get('submit_button', "button[type='submit']")
-                submit_button = self.driver.find_element(By.CSS_SELECTOR, submit_selector)
-                submit_button.click()
-                logging.info("Formulaire de login soumis.")
+                # Bouton vert "LOG IN"
+                submit_btn = self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit']")
+                submit_btn.click()
+                logging.info("Bouton LOG IN cliqué.")
                 
                 time.sleep(10)
                 self.driver.save_screenshot("debug_betpawa_after_login.png")
             except Exception as e:
-                logging.error(f"Erreur lors du remplissage du formulaire : {e}")
+                logging.error(f"Erreur lors de la saisie du formulaire : {e}")
             
             # Vérification finale
-            if any(word in self.driver.page_source for word in ["Deposit", "Déposer", "Balance", "Solde"]):
-                logging.info("Connexion réussie.")
+            time.sleep(5)
+            if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account", "Solde"]):
+                logging.info("Connexion confirmée.")
                 return True
             
             return False
         except Exception as e:
-            logging.error(f"Erreur critique lors du login : {e}")
+            logging.error(f"Erreur critique login : {e}")
             return "multiplier" in self.driver.page_source.lower()
 
     def log_data(self, multiplier, data_type="live", prediction=None):
