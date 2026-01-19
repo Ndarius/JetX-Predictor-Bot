@@ -18,6 +18,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 from strategies import StatisticalStrategy, MartingaleStrategy
 
 # Configuration du logging
@@ -104,13 +105,8 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
-        # Optimisations pour Render
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-        
-        # Utilisation des binaires système
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
         driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
         
@@ -136,47 +132,49 @@ class JetXBetpawaBot:
         logging.info(f"Navigation vers {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(15) # Plus de temps pour le chargement initial
+            time.sleep(15)
             self.driver.save_screenshot("debug_betpawa_initial.png")
             
             if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account"]):
                 logging.info("Déjà connecté.")
                 return self.navigate_to_jetx()
             
-            # 1. Gérer le pop-up JetX "Join Now or Log In"
-            logging.info("Recherche du bouton LOGIN dans le pop-up...")
+            # --- STRATÉGIE FORCE BRUTE POUR LE POP-UP ---
+            logging.info("Tentative de passage du pop-up (Force Brute)...")
+            
+            # 1. Essayer de trouver le bouton par texte dans tous les éléments (même cachés)
             try:
-                # Sélecteurs spécifiques pour le bouton noir LOGIN du pop-up
-                popup_login_selectors = [
-                    "//button[contains(text(), 'LOGIN')]",
-                    "//div[contains(text(), 'LOGIN')]",
-                    "//button[contains(@class, 'login')]",
-                    "//div[contains(@class, 'login')]"
-                ]
-                
-                found_popup_btn = False
-                for selector in popup_login_selectors:
-                    try:
-                        btn = self.driver.find_element(By.XPATH, selector)
-                        if btn.is_displayed():
-                            # Tentative de clic via JavaScript pour plus de fiabilité sur les pop-ups
-                            self.driver.execute_script("arguments[0].click();", btn)
-                            logging.info(f"Bouton LOGIN du pop-up cliqué via JS ({selector}).")
-                            found_popup_btn = True
-                            break
-                    except: continue
-                
-                if not found_popup_btn:
-                    logging.info("Bouton LOGIN du pop-up non trouvé, tentative de clic sur le bouton LOGIN global.")
-                    global_login = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '/login')] | //button[contains(., 'LOGIN')]")))
-                    self.driver.execute_script("arguments[0].click();", global_login)
-                
-                time.sleep(8)
-                self.driver.save_screenshot("debug_betpawa_login_page.png")
-            except Exception as e:
-                logging.warning(f"Erreur lors du déclenchement du login : {e}")
+                script = """
+                var btns = document.querySelectorAll('button, div, span, a');
+                for (var i = 0; i < btns.length; i++) {
+                    if (btns[i].textContent.includes('LOGIN') || btns[i].textContent.includes('Log In')) {
+                        btns[i].click();
+                        return true;
+                    }
+                }
+                return false;
+                """
+                clicked = self.driver.execute_script(script)
+                if clicked:
+                    logging.info("Bouton LOGIN cliqué via script global.")
+            except: pass
 
-            # 2. Saisie des identifiants
+            # 2. Cliquer aux coordonnées probables du bouton (centre de l'écran environ)
+            try:
+                actions = ActionChains(self.driver)
+                # Le bouton est souvent au centre dans ces modales
+                actions.move_by_offset(960, 540).click().perform()
+                logging.info("Clic effectué au centre de l'écran (960, 540).")
+                actions.move_by_offset(0, 50).click().perform() # Un peu plus bas au cas où
+            except: pass
+
+            # 3. Navigation directe vers la page de login si le pop-up bloque
+            logging.info("Navigation directe vers la page de login...")
+            self.driver.get("https://www.betpawa.bj/login")
+            time.sleep(10)
+            self.driver.save_screenshot("debug_betpawa_login_page.png")
+
+            # 4. Saisie des identifiants
             logging.info("Saisie des identifiants...")
             try:
                 phone_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='phoneNumber'], input[type='tel']")))
@@ -204,10 +202,16 @@ class JetXBetpawaBot:
     def navigate_to_jetx(self):
         logging.info("Accès JetX...")
         try:
-            # Si on n'est pas déjà sur JetX, on y va
-            if "gameId=jetx" not in self.driver.current_url:
-                self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
-                time.sleep(10)
+            self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
+            time.sleep(15)
+            
+            # Vérifier si le pop-up est encore là sur la page JetX
+            self.driver.execute_script("""
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    if (btns[i].textContent.includes('LOGIN')) btns[i].click();
+                }
+            """)
             
             self.driver.save_screenshot("debug_betpawa_jetx_loaded.png")
             return True
