@@ -60,12 +60,10 @@ class JetXBetpawaBot:
         if not db_url:
             return None
         try:
-            # Nettoyage de l'URL pour Neon/Koyeb si nécessaire
-            if ("neon.tech" in db_url or "koyeb.app" in db_url) and "options=endpoint%3D" not in db_url:
+            # Render fournit souvent une URL directe, mais on s'assure du SSL
+            if "sslmode=" not in db_url:
                 separator = "&" if "?" in db_url else "?"
-                host = db_url.split("@")[1].split("/")[0]
-                endpoint_id = host.split(".")[0]
-                db_url += f"{separator}sslmode=require&options=endpoint%3D{endpoint_id}"
+                db_url += f"{separator}sslmode=require"
             return psycopg2.connect(db_url)
         except Exception as e:
             logging.warning(f"Impossible de se connecter à la DB : {e}")
@@ -108,35 +106,35 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
         
-        # Optimisations agressives pour éviter les crashs sur Koyeb (RAM)
+        # Optimisations agressives pour Render (RAM très limitée sur le plan Free)
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--memory-pressure-off")
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
         chrome_options.add_argument("--disable-background-networking")
         chrome_options.add_argument("--disable-sync")
         chrome_options.add_argument("--disable-translate")
         chrome_options.add_argument("--metrics-recording-only")
+        chrome_options.add_argument("--no-first-run")
+        chrome_options.add_argument("--no-default-browser-check")
         
-        # Chemins spécifiques pour Koyeb
-        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium-browser")
-        if not os.path.exists(chrome_bin):
-            chrome_bin = "/usr/bin/chromium"
-            
-        if os.path.exists(chrome_bin):
+        # Chemins spécifiques pour Render (via buildpack chrome)
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN")
+        if chrome_bin:
             chrome_options.binary_location = chrome_bin
-            logging.info(f"Chrome binaire : {chrome_bin}")
+            logging.info(f"Utilisation du binaire Chrome Render : {chrome_bin}")
         
         try:
+            # Sur Render, le chromedriver est généralement dans le PATH via le buildpack
             self.driver = webdriver.Chrome(options=chrome_options)
-            logging.info("Chrome démarré avec succès.")
+            logging.info("Chrome démarré avec succès sur Render.")
         except Exception as e:
             logging.error(f"Crash Chrome : {e}. Tentative avec paramètres de secours...")
-            chrome_options.add_argument("--single-process") # Parfois nécessaire sur RAM très faible
             try:
-                self.driver = webdriver.Chrome(options=chrome_options)
+                # Tentative avec le driver système par défaut
+                service = ChromeService(executable_path="/usr/bin/chromedriver")
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
             except Exception as e2:
-                logging.error(f"Échec critique Selenium : {e2}")
+                logging.error(f"Échec critique Selenium sur Render : {e2}")
                 raise e2
             
         self.driver.set_page_load_timeout(60)

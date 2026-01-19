@@ -2,13 +2,13 @@
 # exit on error
 set -o errexit
 
-# Install dependencies
+# Installer les dépendances Python
 pip install -r requirements.txt
 
-# Install Google Chrome (Render environment specific)
-if [ ! -f "/usr/bin/google-chrome" ]; then
-  echo "Installing Google Chrome..."
-  wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
-  echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list
-  apt-get update && apt-get install -y google-chrome-stable
-fi
+# Sur Render, il est préférable d'utiliser les Buildpacks pour Chrome.
+# Si vous n'utilisez pas de buildpacks, ce script tente d'installer les dépendances nécessaires.
+# Mais pour Selenium, ajoutez ces deux Buildpacks dans les paramètres Render :
+# 1. https://github.com/heroku/heroku-buildpack-google-chrome
+# 2. https://github.com/heroku/heroku-buildpack-google-chromedriver
+
+echo "Build terminé. Assurez-vous d'avoir ajouté les buildpacks Chrome et Chromedriver dans les paramètres Render."

@@ -1,25 +1,22 @@
 #!/usr/bin/env bash
 
-# Export paths for Chromium and Driver
-export GOOGLE_CHROME_BIN=${GOOGLE_CHROME_BIN:-/usr/bin/chromium}
-export CHROMEDRIVER_PATH=${CHROMEDRIVER_PATH:-/usr/bin/chromedriver}
+# Export des chemins pour Render
 export PORT=${PORT:-10000}
 
-echo "--- Démarrage du Bot JetX avec Dashboard ---"
+echo "--- Démarrage du Bot JetX sur Render ---"
 
-# Nettoyage initial des processus pour libérer la RAM
-pkill -9 -f chromium || true
+# Nettoyage des processus pour libérer la RAM
+pkill -9 -f chrome || true
 pkill -9 -f streamlit || true
 
-# Lancement du Dashboard Streamlit en arrière-plan sur le port Render
-# On utilise --server.port pour que Render puisse faire le health check dessus
+# Lancement du Dashboard Streamlit (Indispensable pour le Health Check de Render)
 streamlit run dashboard.py --server.port $PORT --server.address 0.0.0.0 &
 
-echo "Dashboard démarré sur le port $PORT"
+echo "Dashboard Streamlit lancé sur le port $PORT"
 
-# Attendre un peu que le dashboard soit prêt
-sleep 5
+# Attendre que le dashboard soit prêt
+sleep 10
 
-# Lancement du bot en premier plan
-echo "Lancement du bot de surveillance..."
-python3 jetx_betpawa_bot.py
+# Lancement du bot de surveillance
+echo "Lancement du bot JetX..."
+python jetx_betpawa_bot.py
