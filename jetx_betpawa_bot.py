@@ -121,16 +121,8 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        # Utilisation d'une taille de fenêtre plus large pour correspondre à la capture de l'utilisateur
         chrome_options.add_argument("--window-size=1920,1080") 
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        
-        # Optimisations
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--disable-dev-tools")
-        chrome_options.add_argument("--no-first-run")
-        chrome_options.add_argument("--no-default-browser-check")
         
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
         if os.path.exists(chrome_bin):
@@ -155,83 +147,78 @@ class JetXBetpawaBot:
         try:
             self.driver.get(self.url)
             time.sleep(10)
-            
             self.driver.save_screenshot("debug_betpawa_initial.png")
             
-            if any(word in self.driver.page_source for word in ["Deposit", "Déposer", "Balance", "Solde", "Account"]):
+            # Vérifier si déjà connecté
+            if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account", "Solde"]):
                 logging.info("Déjà connecté.")
-                return True
+                return self.navigate_to_jetx()
             
-            # 1. Gérer le pop-up initial "Join Now or Log In"
-            logging.info("Recherche du bouton LOGIN initial...")
+            # 1. Aller à la page de login
+            logging.info("Recherche du bouton LOGIN...")
             try:
-                # On cherche le bouton LOGIN dans le pop-up ou en haut de page
-                login_trigger_selectors = [
-                    "//button[contains(text(), 'LOGIN')]",
-                    "//div[contains(text(), 'LOGIN')]",
-                    "//a[contains(@href, '/login')]",
-                    "button[data-test-id='login-button']"
-                ]
-                
-                found_trigger = False
-                for selector in login_trigger_selectors:
-                    try:
-                        if selector.startswith("//"):
-                            btn = self.driver.find_element(By.XPATH, selector)
-                        else:
-                            btn = self.driver.find_element(By.CSS_SELECTOR, selector)
-                        
-                        if btn.is_displayed():
-                            btn.click()
-                            logging.info(f"Bouton de déclenchement login cliqué ({selector}).")
-                            found_trigger = True
-                            break
-                    except: continue
-                
-                if not found_trigger:
-                    logging.info("Aucun bouton de login trouvé, on vérifie si on est déjà sur la page de login.")
-                
+                login_btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '/login')] | //button[contains(., 'LOGIN')] | //span[contains(., 'LOGIN')]")))
+                login_btn.click()
                 time.sleep(5)
                 self.driver.save_screenshot("debug_betpawa_login_page.png")
-            except Exception as e:
-                logging.info(f"Erreur lors de la recherche du bouton login : {e}")
+            except:
+                logging.info("Bouton login non trouvé, peut-être déjà sur la page.")
 
-            # 2. Remplir le formulaire (correspondant à la capture de l'utilisateur)
+            # 2. Saisie des identifiants
             logging.info("Saisie des identifiants...")
             try:
-                # Champ téléphone
                 phone_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='phoneNumber'], input[type='tel']")))
                 phone_field.clear()
-                # On envoie le numéro (Betpawa gère souvent le préfixe via un élément séparé comme vu sur la capture)
                 phone_field.send_keys(self.auth['phone'])
-                logging.info(f"Numéro saisi.")
-
-                # Champ PIN
+                
                 pin_field = self.driver.find_element(By.CSS_SELECTOR, "input[name='pincode'], input[type='password']")
                 pin_field.clear()
                 pin_field.send_keys(self.auth['pin'])
-                logging.info("PIN saisi.")
-
-                # Bouton vert "LOG IN"
+                
                 submit_btn = self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit']")
                 submit_btn.click()
-                logging.info("Bouton LOG IN cliqué.")
-                
+                logging.info("Formulaire soumis.")
                 time.sleep(10)
                 self.driver.save_screenshot("debug_betpawa_after_login.png")
             except Exception as e:
-                logging.error(f"Erreur lors de la saisie du formulaire : {e}")
-            
-            # Vérification finale
-            time.sleep(5)
-            if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account", "Solde"]):
-                logging.info("Connexion confirmée.")
-                return True
-            
-            return False
+                logging.error(f"Erreur saisie login : {e}")
+
+            return self.navigate_to_jetx()
         except Exception as e:
             logging.error(f"Erreur critique login : {e}")
-            return "multiplier" in self.driver.page_source.lower()
+            return False
+
+    def navigate_to_jetx(self):
+        logging.info("Navigation vers Casino > JetX...")
+        try:
+            # 1. Cliquer sur l'onglet Casino
+            try:
+                casino_tab = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '/casino')] | //span[contains(., 'CASINO')]")))
+                casino_tab.click()
+                logging.info("Onglet Casino cliqué.")
+                time.sleep(5)
+            except:
+                logging.info("Onglet Casino non trouvé ou déjà actif.")
+
+            # 2. Rechercher et cliquer sur JetX
+            try:
+                # On tente d'accéder directement via l'URL si possible, sinon on cherche le bouton
+                if "gameId=jetx" not in self.driver.current_url:
+                    self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
+                    time.sleep(10)
+                
+                # Vérifier la présence de l'iframe du jeu
+                self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
+                logging.info("Iframe JetX détectée.")
+                self.driver.save_screenshot("debug_betpawa_jetx_loaded.png")
+                return True
+            except Exception as e:
+                logging.error(f"Erreur chargement JetX : {e}")
+                # Si on voit "multiplier" dans la source, c'est que c'est bon
+                return "multiplier" in self.driver.page_source.lower()
+        except Exception as e:
+            logging.error(f"Erreur navigation JetX : {e}")
+            return False
 
     def log_data(self, multiplier, data_type="live", prediction=None):
         try:
@@ -249,17 +236,31 @@ class JetXBetpawaBot:
 
     def extract_multiplier(self):
         try:
+            # Si le jeu est dans une iframe, il faut switcher
+            if len(self.driver.find_elements(By.TAG_NAME, "iframe")) > 0:
+                self.driver.switch_to.frame(0)
+            
+            val = None
             for selector in self.selectors.get('multiplier', []):
                 elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
                 for el in elements:
                     text = el.text.replace('x', '').strip()
                     if text and text.replace('.', '').isdigit():
-                        return float(text)
+                        val = float(text)
+                        break
+                if val: break
+            
+            self.driver.switch_to.default_content()
+            return val
+        except: 
+            self.driver.switch_to.default_content()
             return None
-        except: return None
 
     def extract_history(self):
         try:
+            if len(self.driver.find_elements(By.TAG_NAME, "iframe")) > 0:
+                self.driver.switch_to.frame(0)
+                
             history = []
             for selector in self.selectors.get('history', []):
                 elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
@@ -270,12 +271,16 @@ class JetXBetpawaBot:
                             history.append(val)
                         except: continue
                     if history: break
+            
+            self.driver.switch_to.default_content()
             return history
-        except: return []
+        except: 
+            self.driver.switch_to.default_content()
+            return []
 
     def run(self):
         if not self.login(): 
-            logging.error("Échec du login. Tentative de surveillance quand même...")
+            logging.error("Échec du login/navigation. Tentative de surveillance...")
         
         logging.info("Surveillance active...")
         try:
@@ -302,9 +307,7 @@ class JetXBetpawaBot:
                         if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
                             logging.info(f"SIGNAL: CASH OUT! {current_val}x")
                 except Exception as e:
-                    logging.warning(f"Erreur mineure dans la boucle : {e}")
-                    if "session" in str(e).lower() or "disconnected" in str(e).lower():
-                        raise e
+                    logging.warning(f"Erreur mineure : {e}")
                 time.sleep(2)
         finally:
             if hasattr(self, 'driver'):
