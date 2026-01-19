@@ -38,10 +38,18 @@ st.markdown("""
 
 st.title("🚀 JetX Predictor Pro - Dashboard")
 
-# Debug Image
-if os.path.exists("debug_betpawa.png"):
-    with st.expander("🔍 Voir l'état du Bot (Debug)"):
-        st.image("debug_betpawa.png", caption="Capture d'écran du Bot sur Betpawa")
+# Debug Images Section
+debug_files = ["debug_betpawa.png", "debug_betpawa_initial.png", "debug_betpawa_after_login.png"]
+available_debug = [f for f in debug_files if os.path.exists(f)]
+
+if available_debug:
+    with st.expander("🔍 Voir l'état du Bot (Debug)", expanded=False):
+        cols = st.columns(len(available_debug))
+        for i, img_path in enumerate(available_debug):
+            with cols[i]:
+                st.image(img_path, caption=f"Capture: {img_path}")
+else:
+    st.sidebar.info("ℹ️ Aucune capture de debug disponible pour le moment.")
 
 # Connexion à la base de données
 def get_db_connection():
@@ -59,7 +67,6 @@ def load_data():
         return pd.DataFrame()
     try:
         query = "SELECT * FROM jetx_logs ORDER BY timestamp DESC LIMIT 100"
-        # Utilisation de read_sql avec l'avertissement ignoré
         df = pd.read_sql(query, conn)
         conn.close()
         return df
@@ -135,6 +142,6 @@ else:
     st.warning("⚠️ Aucune donnée trouvée dans la base de données.")
     st.info("Le bot est connecté mais attend la fin du premier tour pour enregistrer des données.")
 
-# Auto-refresh toutes les 15 secondes pour moins de pollution logs
+# Auto-refresh toutes les 15 secondes
 time.sleep(15)
 st.rerun()
