@@ -19,7 +19,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from strategies import StatisticalStrategy, MartingaleStrategy
-from webdriver_manager.chrome import ChromeDriverManager
 
 # Configuration du logging
 logging.basicConfig(
@@ -111,22 +110,29 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-software-rasterizer")
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
         
-        # Chemin binaire Chrome pour Docker
-        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/google-chrome-stable")
+        # Utilisation des binaires système installés par le Dockerfile
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
+        driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
+        
         if os.path.exists(chrome_bin):
             chrome_options.binary_location = chrome_bin
-            logging.info(f"Chrome binaire : {chrome_bin}")
+            logging.info(f"Utilisation du binaire Chromium : {chrome_bin}")
         
         try:
-            # Utilisation de WebDriver Manager pour installer automatiquement le bon driver
-            logging.info("Installation/Vérification du ChromeDriver via WebDriver Manager...")
-            driver_path = ChromeDriverManager().install()
+            logging.info(f"Démarrage de Chrome avec le driver : {driver_path}")
             service = ChromeService(executable_path=driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            logging.info("Chrome démarré avec succès via WebDriver Manager.")
+            logging.info("Chrome démarré avec succès.")
         except Exception as e:
             logging.error(f"Échec critique Selenium : {e}")
-            raise e
+            # Tentative de secours sans spécifier le chemin du driver
+            try:
+                logging.info("Tentative de secours sans chemin de driver...")
+                self.driver = webdriver.Chrome(options=chrome_options)
+                logging.info("Chrome démarré avec succès (secours).")
+            except Exception as e2:
+                logging.error(f"Échec total Selenium : {e2}")
+                raise e2
             
         self.driver.set_page_load_timeout(60)
         self.wait = WebDriverWait(self.driver, 20)
