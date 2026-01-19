@@ -101,22 +101,23 @@ class JetXBetpawaBot:
         chrome_options = Options()
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-dev-shm-usage") # CRUCIAL pour Docker sur Render
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
         
-        # Optimisations pour Render
+        # Optimisations supplémentaires pour la RAM
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-software-rasterizer")
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+        chrome_options.add_argument("--remote-debugging-port=9222")
         
-        # Utilisation des binaires système installés par le Dockerfile
+        # Utilisation des binaires système
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
         driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
         
         if os.path.exists(chrome_bin):
             chrome_options.binary_location = chrome_bin
-            logging.info(f"Utilisation du binaire Chromium : {chrome_bin}")
+            logging.info(f"Utilisation du binaire Chrome : {chrome_bin}")
         
         try:
             logging.info(f"Démarrage de Chrome avec le driver : {driver_path}")
@@ -125,7 +126,7 @@ class JetXBetpawaBot:
             logging.info("Chrome démarré avec succès.")
         except Exception as e:
             logging.error(f"Échec critique Selenium : {e}")
-            # Tentative de secours sans spécifier le chemin du driver
+            # Tentative de secours
             try:
                 logging.info("Tentative de secours sans chemin de driver...")
                 self.driver = webdriver.Chrome(options=chrome_options)
@@ -249,6 +250,8 @@ class JetXBetpawaBot:
                     new_row = pd.DataFrame([{'multiplier': new_result}])
                     self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
                     lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
+                    self.current_prediction = {"lower": None, "upper": None, "confidence": 0, "next": None}
+                    # Correction : On s'assure que la prédiction est bien mise à jour
                     self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
                     ts = self.log_data(new_result, "result", next_p)
                     logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
