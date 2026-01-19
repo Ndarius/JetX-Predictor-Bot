@@ -128,19 +128,34 @@ class JetXBetpawaBot:
             
         self.driver.set_page_load_timeout(60)
         self.wait = WebDriverWait(self.driver, 30)
-        self.actions = ActionChains(self.driver)
 
     def human_type(self, element, text):
         """Simule une saisie humaine touche par touche"""
-        element.click()
-        time.sleep(0.5)
-        for char in text:
-            element.send_keys(char)
-            time.sleep(0.1) # Petit délai entre chaque touche
+        try:
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+            time.sleep(0.5)
+            element.click()
+            time.sleep(0.5)
+            element.clear()
+            for char in text:
+                element.send_keys(char)
+                time.sleep(0.1)
+        except Exception as e:
+            logging.warning(f"Erreur saisie humaine, fallback JS: {e}")
+            self.driver.execute_script(f"arguments[0].value = '{text}';", element)
 
     def human_click(self, element):
-        """Simule un mouvement de souris et un clic physique"""
-        self.actions.move_to_element(element).pause(0.5).click().perform()
+        """Simule un mouvement de souris et un clic physique avec sécurité"""
+        try:
+            # Faire défiler jusqu'à l'élément pour éviter 'out of bounds'
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+            time.sleep(0.8)
+            
+            actions = ActionChains(self.driver)
+            actions.move_to_element(element).pause(0.5).click().perform()
+        except Exception as e:
+            logging.warning(f"Erreur clic physique, fallback JS: {e}")
+            self.driver.execute_script("arguments[0].click();", element)
 
     def login(self):
         logging.info(f"Navigation directe vers la page de login : {self.url}")
@@ -153,8 +168,8 @@ class JetXBetpawaBot:
                 logging.info("Déjà connecté.")
                 return self.navigate_to_jetx()
             
-            # --- LOGIQUE DE CLIC PHYSIQUE ---
-            logging.info("Tentative de connexion via clics physiques...")
+            # --- LOGIQUE DE CONNEXION SÉCURISÉE ---
+            logging.info("Tentative de connexion...")
             
             if len(self.driver.find_elements(By.TAG_NAME, "iframe")) > 0:
                 self.driver.switch_to.frame(0)
@@ -163,14 +178,12 @@ class JetXBetpawaBot:
             phone_field = None
             for by, sel in [(By.NAME, "phoneNumber"), (By.CSS_SELECTOR, "input[type='tel']"), (By.XPATH, "//input[contains(@name, 'phone')]")]:
                 try:
-                    phone_field = self.wait.until(EC.visibility_of_element_located((by, sel)))
+                    phone_field = self.wait.until(EC.presence_of_element_located((by, sel)))
                     if phone_field: break
                 except: continue
             
             if phone_field:
-                logging.info("Saisie du téléphone (mode humain)...")
-                self.human_click(phone_field)
-                phone_field.clear()
+                logging.info("Saisie du téléphone...")
                 self.human_type(phone_field, self.auth['phone'])
             
             # Recherche du champ PIN
@@ -182,15 +195,13 @@ class JetXBetpawaBot:
                 except: continue
             
             if pin_field:
-                logging.info("Saisie du PIN (mode humain)...")
-                self.human_click(pin_field)
-                pin_field.clear()
+                logging.info("Saisie du PIN...")
                 self.human_type(pin_field, self.auth['pin'])
 
-            # Clic physique sur le bouton de validation
+            # Clic sur le bouton de validation
             try:
                 submit_btn = self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit'] | //button[@type='submit']")
-                logging.info("Clic physique sur le bouton de login...")
+                logging.info("Clic sur le bouton de login...")
                 self.human_click(submit_btn)
             except:
                 logging.error("Bouton submit non trouvé, validation via Enter...")
