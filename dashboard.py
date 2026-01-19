@@ -4,7 +4,11 @@ import psycopg2
 import pandas as pd
 import plotly.express as px
 import time
+import warnings
 from datetime import datetime
+
+# Ignorer les avertissements de Pandas concernant la connexion directe DBAPI2
+warnings.filterwarnings("ignore", category=UserWarning, message=".*pandas only supports SQLAlchemy.*")
 
 # Configuration de la page
 st.set_page_config(page_title="JetX Predictor Dashboard", layout="wide", page_icon="🚀")
@@ -50,10 +54,12 @@ def load_data():
         return pd.DataFrame()
     try:
         query = "SELECT * FROM jetx_logs ORDER BY timestamp DESC LIMIT 100"
+        # Utilisation de read_sql avec l'avertissement ignoré
         df = pd.read_sql(query, conn)
         conn.close()
         return df
-    except:
+    except Exception as e:
+        if conn: conn.close()
         return pd.DataFrame()
 
 # Sidebar pour le statut
@@ -65,7 +71,7 @@ st.sidebar.write(f"Base de données : {db_status}")
 df = load_data()
 
 if not df.empty:
-    # Zone de Prédiction (Dernière ligne avec type 'result' ou calculée)
+    # Zone de Prédiction
     last_prediction = df[df['prediction'].notnull()].iloc[0] if not df[df['prediction'].notnull()].empty else None
     
     st.markdown('<div class="prediction-box">', unsafe_allow_html=True)
@@ -87,8 +93,7 @@ if not df.empty:
             
     with col3:
         st.subheader("⏱️ Mis à jour à")
-        if not df.empty:
-            st.write(df.iloc[0]['timestamp'].strftime("%H:%M:%S"))
+        st.write(df.iloc[0]['timestamp'].strftime("%H:%M:%S"))
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Statistiques
@@ -123,8 +128,8 @@ if not df.empty:
 
 else:
     st.warning("⚠️ Aucune donnée trouvée dans la base de données.")
-    st.info("Le bot est peut-être en cours de démarrage ou n'a pas encore collecté de données.")
+    st.info("Le bot est connecté mais attend la fin du premier tour pour enregistrer des données.")
 
-# Auto-refresh
-time.sleep(10)
+# Auto-refresh toutes les 15 secondes pour moins de pollution logs
+time.sleep(15)
 st.rerun()
