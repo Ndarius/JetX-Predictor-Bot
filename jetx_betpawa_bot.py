@@ -45,7 +45,7 @@ class JetXBetpawaBot:
     def load_config(self, path):
         with open(path, 'r') as f:
             self.config = yaml.safe_load(f)
-        self.url = self.config.get('url')
+        self.url = "https://www.betpawa.bj/login" # Navigation directe forcée
         self.margin_factor = self.config.get('margin_factor', 1.5)
         self.selectors = self.config.get('selectors', {})
         self.auth = self.config.get('auth', {})
@@ -129,52 +129,17 @@ class JetXBetpawaBot:
         self.wait = WebDriverWait(self.driver, 30)
 
     def login(self):
-        logging.info(f"Navigation vers {self.url}")
+        logging.info(f"Navigation directe vers la page de login : {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(15)
-            self.driver.save_screenshot("debug_betpawa_initial.png")
+            time.sleep(10)
+            self.driver.save_screenshot("debug_betpawa_login_page.png")
             
             if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account"]):
                 logging.info("Déjà connecté.")
                 return self.navigate_to_jetx()
             
-            # --- STRATÉGIE FORCE BRUTE POUR LE POP-UP ---
-            logging.info("Tentative de passage du pop-up (Force Brute)...")
-            
-            # 1. Essayer de trouver le bouton par texte dans tous les éléments (même cachés)
-            try:
-                script = """
-                var btns = document.querySelectorAll('button, div, span, a');
-                for (var i = 0; i < btns.length; i++) {
-                    if (btns[i].textContent.includes('LOGIN') || btns[i].textContent.includes('Log In')) {
-                        btns[i].click();
-                        return true;
-                    }
-                }
-                return false;
-                """
-                clicked = self.driver.execute_script(script)
-                if clicked:
-                    logging.info("Bouton LOGIN cliqué via script global.")
-            except: pass
-
-            # 2. Cliquer aux coordonnées probables du bouton (centre de l'écran environ)
-            try:
-                actions = ActionChains(self.driver)
-                # Le bouton est souvent au centre dans ces modales
-                actions.move_by_offset(960, 540).click().perform()
-                logging.info("Clic effectué au centre de l'écran (960, 540).")
-                actions.move_by_offset(0, 50).click().perform() # Un peu plus bas au cas où
-            except: pass
-
-            # 3. Navigation directe vers la page de login si le pop-up bloque
-            logging.info("Navigation directe vers la page de login...")
-            self.driver.get("https://www.betpawa.bj/login")
-            time.sleep(10)
-            self.driver.save_screenshot("debug_betpawa_login_page.png")
-
-            # 4. Saisie des identifiants
+            # Saisie des identifiants sur la page de login directe
             logging.info("Saisie des identifiants...")
             try:
                 phone_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='phoneNumber'], input[type='tel']")))
@@ -205,11 +170,11 @@ class JetXBetpawaBot:
             self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
             time.sleep(15)
             
-            # Vérifier si le pop-up est encore là sur la page JetX
+            # Fermer tout pop-up résiduel sur la page JetX
             self.driver.execute_script("""
                 var btns = document.querySelectorAll('button');
                 for (var i = 0; i < btns.length; i++) {
-                    if (btns[i].textContent.includes('LOGIN')) btns[i].click();
+                    if (btns[i].textContent.includes('LOGIN') || btns[i].textContent.includes('Log In')) btns[i].click();
                 }
             """)
             
