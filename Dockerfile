@@ -7,8 +7,6 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     unzip \
     curl \
-    chromium \
-    chromium-driver \
     procps \
     libnss3 \
     libatk1.0-0 \
@@ -21,6 +19,13 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libgbm1 \
     libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Google Chrome Stable
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -39,14 +44,13 @@ RUN mkdir -p /bot && chmod 777 /bot
 # Make start script executable
 RUN chmod +x start.sh
 
-# Expose port for Streamlit (if needed)
+# Expose port for Streamlit
 EXPOSE 10000
 
-# Set environment variables
+# Set environment variables for Render
 ENV PORT=10000
 ENV PYTHONUNBUFFERED=1
-ENV GOOGLE_CHROME_BIN=/usr/bin/chromium
-ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+ENV GOOGLE_CHROME_BIN=/usr/bin/google-chrome-stable
 
 # Run the start script
 CMD ["./start.sh"]
