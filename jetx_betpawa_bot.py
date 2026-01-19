@@ -45,7 +45,7 @@ class JetXBetpawaBot:
     def load_config(self, path):
         with open(path, 'r') as f:
             self.config = yaml.safe_load(f)
-        self.url = "https://www.betpawa.bj/login" # Navigation directe forcée
+        self.url = "https://www.betpawa.bj/login"
         self.margin_factor = self.config.get('margin_factor', 1.5)
         self.selectors = self.config.get('selectors', {})
         self.auth = self.config.get('auth', {})
@@ -132,36 +132,81 @@ class JetXBetpawaBot:
         logging.info(f"Navigation directe vers la page de login : {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(10)
+            time.sleep(12)
             self.driver.save_screenshot("debug_betpawa_login_page.png")
             
             if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account"]):
                 logging.info("Déjà connecté.")
                 return self.navigate_to_jetx()
             
-            # Saisie des identifiants sur la page de login directe
-            logging.info("Saisie des identifiants...")
-            try:
-                phone_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='phoneNumber'], input[type='tel']")))
+            # --- LOGIQUE DE SAISIE ROBUSTE ---
+            logging.info("Recherche des champs de saisie...")
+            
+            # 1. Vérifier si on est dans une iframe
+            if len(self.driver.find_elements(By.TAG_NAME, "iframe")) > 0:
+                logging.info("Iframe détectée, tentative de basculement...")
+                self.driver.switch_to.frame(0)
+
+            # 2. Sélecteurs multiples pour le téléphone
+            phone_selectors = [
+                (By.NAME, "phoneNumber"),
+                (By.CSS_SELECTOR, "input[type='tel']"),
+                (By.CSS_SELECTOR, "input[placeholder*='number']"),
+                (By.XPATH, "//input[contains(@name, 'phone')]")
+            ]
+            
+            phone_field = None
+            for by, sel in phone_selectors:
+                try:
+                    phone_field = self.wait.until(EC.visibility_of_element_located((by, sel)))
+                    if phone_field: break
+                except: continue
+            
+            if not phone_field:
+                logging.error("Champ téléphone non trouvé, tentative via JS...")
+                self.driver.execute_script(f"document.querySelector('input[type=\"tel\"]').value = '{self.auth['phone']}';")
+            else:
                 phone_field.clear()
                 phone_field.send_keys(self.auth['phone'])
-                
-                pin_field = self.driver.find_element(By.CSS_SELECTOR, "input[name='pincode'], input[type='password']")
+
+            # 3. Sélecteurs multiples pour le PIN
+            pin_selectors = [
+                (By.NAME, "pincode"),
+                (By.CSS_SELECTOR, "input[type='password']"),
+                (By.CSS_SELECTOR, "input[placeholder*='PIN']"),
+                (By.XPATH, "//input[contains(@name, 'pin')]")
+            ]
+            
+            pin_field = None
+            for by, sel in pin_selectors:
+                try:
+                    pin_field = self.driver.find_element(by, sel)
+                    if pin_field: break
+                except: continue
+            
+            if not pin_field:
+                self.driver.execute_script(f"document.querySelector('input[type=\"password\"]').value = '{self.auth['pin']}';")
+            else:
                 pin_field.clear()
                 pin_field.send_keys(self.auth['pin'])
-                
-                submit_btn = self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit']")
+
+            # 4. Clic sur le bouton de validation
+            try:
+                submit_btn = self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit'] | //button[@type='submit']")
                 self.driver.execute_script("arguments[0].click();", submit_btn)
-                logging.info("Formulaire de login soumis.")
-                
-                time.sleep(12)
-                self.driver.save_screenshot("debug_betpawa_after_login.png")
-            except Exception as e:
-                logging.error(f"Erreur lors de la saisie du formulaire : {e}")
+                logging.info("Bouton de login cliqué.")
+            except:
+                logging.error("Bouton submit non trouvé, tentative via Enter...")
+                pin_field.send_keys("\n")
+
+            self.driver.switch_to.default_content()
+            time.sleep(12)
+            self.driver.save_screenshot("debug_betpawa_after_login.png")
 
             return self.navigate_to_jetx()
         except Exception as e:
             logging.error(f"Erreur critique login : {e}")
+            self.driver.switch_to.default_content()
             return False
 
     def navigate_to_jetx(self):
@@ -169,15 +214,6 @@ class JetXBetpawaBot:
         try:
             self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
             time.sleep(15)
-            
-            # Fermer tout pop-up résiduel sur la page JetX
-            self.driver.execute_script("""
-                var btns = document.querySelectorAll('button');
-                for (var i = 0; i < btns.length; i++) {
-                    if (btns[i].textContent.includes('LOGIN') || btns[i].textContent.includes('Log In')) btns[i].click();
-                }
-            """)
-            
             self.driver.save_screenshot("debug_betpawa_jetx_loaded.png")
             return True
         except:
