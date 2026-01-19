@@ -81,8 +81,8 @@ if available_debug:
         cols = st.columns(len(available_debug))
         for i, img_path in enumerate(available_debug):
             with cols[i]:
-                # Ajout d'un paramètre de temps pour forcer le rafraîchissement de l'image
-                st.image(f"{img_path}?t={int(time.time())}", caption=f"Capture: {img_path}")
+                # Correction : On utilise le chemin direct sans paramètre ?t= car c'est un fichier local
+                st.image(img_path, caption=f"Capture: {img_path}")
 else:
     st.sidebar.info("ℹ️ Aucune capture de debug disponible.")
 
