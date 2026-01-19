@@ -33,7 +33,6 @@ class JetXBetpawaBot:
             base_dir = os.path.dirname(os.path.abspath(__file__))
             config_path = os.path.join(base_dir, "config.yaml")
         
-        # Initialisation des variables AVANT le chargement du stockage
         self.full_history = []
         self.df_full = pd.DataFrame()
         self.current_prediction = {"lower": None, "upper": None, "confidence": 0, "next": None}
@@ -57,63 +56,49 @@ class JetXBetpawaBot:
             self.strategy = StatisticalStrategy(margin_factor=self.margin_factor)
 
     def get_db_connection(self):
-        # Prioritize DATABASE_URL if provided by Koyeb/Neon
         db_url = os.environ.get('DATABASE_URL')
-        if db_url:
+        if not db_url:
+            return None
+        try:
+            # Nettoyage de l'URL pour Neon/Koyeb si nécessaire
             if ("neon.tech" in db_url or "koyeb.app" in db_url) and "options=endpoint%3D" not in db_url:
                 separator = "&" if "?" in db_url else "?"
                 host = db_url.split("@")[1].split("/")[0]
                 endpoint_id = host.split(".")[0]
                 db_url += f"{separator}sslmode=require&options=endpoint%3D{endpoint_id}"
             return psycopg2.connect(db_url)
-
-        host = os.environ.get('DATABASE_HOST', '')
-        user = os.environ.get('DATABASE_USER', '')
-        password = os.environ.get('DATABASE_PASSWORD', '')
-        dbname = os.environ.get('DATABASE_NAME', '')
-        port = os.environ.get('DATABASE_PORT', '5432')
-        endpoint_id = host.split('.')[0] if host else ''
-        
-        # Direct parameters connection with explicit SSL
-        return psycopg2.connect(
-            host=host,
-            user=user,
-            password=password,
-            database=dbname,
-            port=port,
-            sslmode='require',
-            options=f"-c endpoint={endpoint_id}"
-        )
+        except Exception as e:
+            logging.warning(f"Impossible de se connecter à la DB : {e}")
+            return None
 
     def setup_storage(self):
-        logging.info("Connexion à PostgreSQL...")
-        try:
-            conn = self.get_db_connection()
-            cur = conn.cursor()
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS jetx_logs (
-                    id SERIAL PRIMARY KEY,
-                    timestamp TIMESTAMP,
-                    multiplier REAL,
-                    type TEXT,
-                    prediction REAL
-                )
-            ''')
-            conn.commit()
-            
-            # Charger l'historique existant
-            cur.execute("SELECT multiplier FROM jetx_logs WHERE type='result' ORDER BY timestamp ASC")
-            rows = cur.fetchall()
-            if rows:
-                self.full_history = [row[0] for row in rows]
-                self.df_full = pd.DataFrame(rows, columns=['multiplier'])
-            
-            cur.close()
-            conn.close()
-            logging.info(f"PostgreSQL prêt. Historique : {len(self.full_history)} tours.")
-        except Exception as e:
-            logging.error(f"Erreur PostgreSQL : {e}")
-            raise e
+        logging.info("Initialisation du stockage...")
+        conn = self.get_db_connection()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute('''
+                    CREATE TABLE IF NOT EXISTS jetx_logs (
+                        id SERIAL PRIMARY KEY,
+                        timestamp TIMESTAMP,
+                        multiplier REAL,
+                        type TEXT,
+                        prediction REAL
+                    )
+                ''')
+                conn.commit()
+                cur.execute("SELECT multiplier FROM jetx_logs WHERE type='result' ORDER BY timestamp ASC")
+                rows = cur.fetchall()
+                if rows:
+                    self.full_history = [row[0] for row in rows]
+                    self.df_full = pd.DataFrame(rows, columns=['multiplier'])
+                cur.close()
+                conn.close()
+                logging.info(f"PostgreSQL prêt. Historique : {len(self.full_history)} tours.")
+            except Exception as e:
+                logging.error(f"Erreur lors de la configuration DB : {e}")
+        else:
+            logging.warning("Mode sans base de données activé (DATABASE_URL manquante ou invalide).")
 
     def setup_selenium(self):
         chrome_options = Options()
@@ -121,26 +106,41 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080") 
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        chrome_options.add_argument("--window-size=1280,720")
         
-        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
+        # Optimisations agressives pour éviter les crashs sur Koyeb (RAM)
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        chrome_options.add_argument("--memory-pressure-off")
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+        chrome_options.add_argument("--disable-background-networking")
+        chrome_options.add_argument("--disable-sync")
+        chrome_options.add_argument("--disable-translate")
+        chrome_options.add_argument("--metrics-recording-only")
+        
+        # Chemins spécifiques pour Koyeb
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium-browser")
+        if not os.path.exists(chrome_bin):
+            chrome_bin = "/usr/bin/chromium"
+            
         if os.path.exists(chrome_bin):
             chrome_options.binary_location = chrome_bin
+            logging.info(f"Chrome binaire : {chrome_bin}")
         
         try:
-            driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
-            if os.path.exists(driver_path):
-                service = ChromeService(executable_path=driver_path)
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                self.driver = webdriver.Chrome(options=chrome_options)
+            self.driver = webdriver.Chrome(options=chrome_options)
+            logging.info("Chrome démarré avec succès.")
         except Exception as e:
-            logging.error(f"Échec Selenium : {e}")
-            raise e
+            logging.error(f"Crash Chrome : {e}. Tentative avec paramètres de secours...")
+            chrome_options.add_argument("--single-process") # Parfois nécessaire sur RAM très faible
+            try:
+                self.driver = webdriver.Chrome(options=chrome_options)
+            except Exception as e2:
+                logging.error(f"Échec critique Selenium : {e2}")
+                raise e2
             
-        self.driver.set_page_load_timeout(120)
-        self.wait = WebDriverWait(self.driver, 30)
+        self.driver.set_page_load_timeout(60)
+        self.wait = WebDriverWait(self.driver, 20)
 
     def login(self):
         logging.info(f"Navigation vers {self.url}")
@@ -149,39 +149,28 @@ class JetXBetpawaBot:
             time.sleep(10)
             self.driver.save_screenshot("debug_betpawa_initial.png")
             
-            # Vérifier si déjà connecté
-            if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account", "Solde"]):
+            if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account"]):
                 logging.info("Déjà connecté.")
                 return self.navigate_to_jetx()
             
-            # 1. Aller à la page de login
-            logging.info("Recherche du bouton LOGIN...")
+            # Login
             try:
-                login_btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '/login')] | //button[contains(., 'LOGIN')] | //span[contains(., 'LOGIN')]")))
+                login_btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '/login')] | //button[contains(., 'LOGIN')]")))
                 login_btn.click()
                 time.sleep(5)
-                self.driver.save_screenshot("debug_betpawa_login_page.png")
-            except:
-                logging.info("Bouton login non trouvé, peut-être déjà sur la page.")
-
-            # 2. Saisie des identifiants
-            logging.info("Saisie des identifiants...")
-            try:
+                
                 phone_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='phoneNumber'], input[type='tel']")))
-                phone_field.clear()
                 phone_field.send_keys(self.auth['phone'])
                 
                 pin_field = self.driver.find_element(By.CSS_SELECTOR, "input[name='pincode'], input[type='password']")
-                pin_field.clear()
                 pin_field.send_keys(self.auth['pin'])
                 
-                submit_btn = self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit']")
-                submit_btn.click()
-                logging.info("Formulaire soumis.")
+                self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit']").click()
+                logging.info("Login soumis.")
                 time.sleep(10)
                 self.driver.save_screenshot("debug_betpawa_after_login.png")
             except Exception as e:
-                logging.error(f"Erreur saisie login : {e}")
+                logging.warning(f"Erreur pendant le login : {e}")
 
             return self.navigate_to_jetx()
         except Exception as e:
@@ -189,40 +178,19 @@ class JetXBetpawaBot:
             return False
 
     def navigate_to_jetx(self):
-        logging.info("Navigation vers Casino > JetX...")
+        logging.info("Accès JetX...")
         try:
-            # 1. Cliquer sur l'onglet Casino
-            try:
-                casino_tab = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '/casino')] | //span[contains(., 'CASINO')]")))
-                casino_tab.click()
-                logging.info("Onglet Casino cliqué.")
-                time.sleep(5)
-            except:
-                logging.info("Onglet Casino non trouvé ou déjà actif.")
-
-            # 2. Rechercher et cliquer sur JetX
-            try:
-                # On tente d'accéder directement via l'URL si possible, sinon on cherche le bouton
-                if "gameId=jetx" not in self.driver.current_url:
-                    self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
-                    time.sleep(10)
-                
-                # Vérifier la présence de l'iframe du jeu
-                self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
-                logging.info("Iframe JetX détectée.")
-                self.driver.save_screenshot("debug_betpawa_jetx_loaded.png")
-                return True
-            except Exception as e:
-                logging.error(f"Erreur chargement JetX : {e}")
-                # Si on voit "multiplier" dans la source, c'est que c'est bon
-                return "multiplier" in self.driver.page_source.lower()
-        except Exception as e:
-            logging.error(f"Erreur navigation JetX : {e}")
+            self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
+            time.sleep(10)
+            self.driver.save_screenshot("debug_betpawa_jetx_loaded.png")
+            return True
+        except:
             return False
 
     def log_data(self, multiplier, data_type="live", prediction=None):
+        conn = self.get_db_connection()
+        if not conn: return datetime.datetime.now()
         try:
-            conn = self.get_db_connection()
             cur = conn.cursor()
             now = datetime.datetime.now()
             cur.execute('INSERT INTO jetx_logs (timestamp, multiplier, type, prediction) VALUES (%s, %s, %s, %s)', 
@@ -231,12 +199,10 @@ class JetXBetpawaBot:
             cur.close()
             conn.close()
             return now
-        except Exception as e:
-            logging.error(f"Erreur log_data : {e}")
+        except: return datetime.datetime.now()
 
     def extract_multiplier(self):
         try:
-            # Si le jeu est dans une iframe, il faut switcher
             if len(self.driver.find_elements(By.TAG_NAME, "iframe")) > 0:
                 self.driver.switch_to.frame(0)
             
@@ -260,7 +226,6 @@ class JetXBetpawaBot:
         try:
             if len(self.driver.find_elements(By.TAG_NAME, "iframe")) > 0:
                 self.driver.switch_to.frame(0)
-                
             history = []
             for selector in self.selectors.get('history', []):
                 elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
@@ -271,7 +236,6 @@ class JetXBetpawaBot:
                             history.append(val)
                         except: continue
                     if history: break
-            
             self.driver.switch_to.default_content()
             return history
         except: 
@@ -279,40 +243,28 @@ class JetXBetpawaBot:
             return []
 
     def run(self):
-        if not self.login(): 
-            logging.error("Échec du login/navigation. Tentative de surveillance...")
-        
+        self.login()
         logging.info("Surveillance active...")
-        try:
-            last_val = None
-            while True:
-                try:
-                    visual_history = self.extract_history()
-                    if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
-                        new_result = visual_history[-1]
-                        self.full_history.append(new_result)
-                        
-                        new_row = pd.DataFrame([{'multiplier': new_result}])
-                        self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
-                        
-                        lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
-                        self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
-                        
-                        ts = self.log_data(new_result, "result", next_p)
-                        logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
-                    
-                    current_val = self.extract_multiplier()
-                    if current_val is not None and current_val != last_val:
-                        last_val = current_val
-                        if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
-                            logging.info(f"SIGNAL: CASH OUT! {current_val}x")
-                except Exception as e:
-                    logging.warning(f"Erreur mineure : {e}")
-                time.sleep(2)
-        finally:
-            if hasattr(self, 'driver'):
-                try: self.driver.quit()
-                except: pass
+        while True:
+            try:
+                visual_history = self.extract_history()
+                if visual_history and (not self.full_history or visual_history[-1] != self.full_history[-1]):
+                    new_result = visual_history[-1]
+                    self.full_history.append(new_result)
+                    new_row = pd.DataFrame([{'multiplier': new_result}])
+                    self.df_full = pd.concat([self.df_full, new_row], ignore_index=True)
+                    lower, upper, conf, next_p = self.strategy.predict(self.full_history, self.df_full)
+                    self.current_prediction = {"lower": lower, "upper": upper, "confidence": conf, "next": next_p}
+                    ts = self.log_data(new_result, "result", next_p)
+                    logging.info(f"[{ts}] TOUR : {new_result}x | PROCHAIN : {next_p:.2f}x")
+                
+                current_val = self.extract_multiplier()
+                if current_val is not None:
+                    if self.current_prediction['upper'] and current_val >= self.current_prediction['upper']:
+                        logging.info(f"SIGNAL: CASH OUT! {current_val}x")
+            except Exception as e:
+                logging.warning(f"Boucle : {e}")
+            time.sleep(3)
 
 if __name__ == "__main__":
     while True:
