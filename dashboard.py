@@ -1,100 +1,65 @@
 import streamlit as st
-import pandas as pd
-import psycopg2
 import os
-from datetime import datetime
-import time
+import psycopg2
+import pandas as pd
 
-# Configuration
-st.set_page_config(page_title="JetX Predict Pro", layout="wide", page_icon="🚀")
+# Configuration de la page
+st.set_page_config(page_title="Diagnostic Connexion Neon", layout="wide")
 
-def get_db_connection():
-    db_url = os.environ.get('DATABASE_URL')
-    if db_url:
-        if ("neon.tech" in db_url or "koyeb.app" in db_url) and "options=endpoint%3D" not in db_url:
-            separator = "&" if "?" in db_url else "?"
-            host = db_url.split("@")[1].split("/")[0]
-            endpoint_id = host.split(".")[0]
-            db_url += f"{separator}sslmode=require&options=endpoint%3D{endpoint_id}"
-        return psycopg2.connect(db_url)
+st.title("🔍 Diagnostic de Connexion à la Base de Données")
 
-    host = os.environ.get('DATABASE_HOST', '')
-    user = os.environ.get('DATABASE_USER', '')
-    password = os.environ.get('DATABASE_PASSWORD', '')
-    dbname = os.environ.get('DATABASE_NAME', '')
-    port = os.environ.get('DATABASE_PORT', '5432')
-    endpoint_id = host.split('.')[0] if host else ''
-    
-    return psycopg2.connect(
-        host=host,
-        user=user,
-        password=password,
-        database=dbname,
-        port=port,
-        sslmode='require',
-        options=f"-c endpoint={endpoint_id}"
-    )
+# Récupération de la variable d'environnement
+db_url = os.environ.get('DATABASE_URL')
 
-@st.cache_data(ttl=2)
-def load_data():
+st.subheader("1. Vérification de la variable d'environnement")
+if not db_url:
+    st.error("❌ La variable 'DATABASE_URL' n'est pas définie dans les Secrets de Streamlit.")
+    st.info("Veuillez l'ajouter dans Settings > Secrets sous la forme : DATABASE_URL='votre_url'")
+else:
+    # Masquer le mot de passe pour l'affichage
+    safe_url = db_url.split('@')[-1] if '@' in db_url else "URL format invalide"
+    st.success(f"✅ Variable 'DATABASE_URL' détectée (Host: {safe_url})")
+
+st.subheader("2. Tentative de connexion à PostgreSQL")
+if db_url:
     try:
-        conn = get_db_connection()
-        # Utilisation de fetchall pour éviter l'avertissement pandas sur DBAPI2
+        # Tentative de connexion
+        conn = psycopg2.connect(db_url)
+        st.success("✅ Connexion établie avec succès à Neon.tech !")
+        
+        # Test de lecture
+        st.subheader("3. Test de lecture des données")
         cur = conn.cursor()
-        cur.execute("SELECT id, timestamp, multiplier, type, prediction FROM jetx_logs ORDER BY timestamp DESC LIMIT 100")
-        rows = cur.fetchall()
-        colnames = [desc[0] for desc in cur.description]
-        df = pd.DataFrame(rows, columns=colnames)
+        
+        # Vérifier si la table existe
+        cur.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'jetx_logs');")
+        table_exists = cur.fetchone()[0]
+        
+        if table_exists:
+            st.success("✅ La table 'jetx_logs' existe.")
+            cur.execute("SELECT * FROM jetx_logs ORDER BY timestamp DESC LIMIT 5")
+            rows = cur.fetchall()
+            colnames = [desc[0] for desc in cur.description]
+            
+            if rows:
+                df = pd.DataFrame(rows, columns=colnames)
+                st.write("Derniers enregistrements trouvés :")
+                st.dataframe(df)
+            else:
+                st.warning("⚠️ La table 'jetx_logs' est vide.")
+        else:
+            st.error("❌ La table 'jetx_logs' n'existe pas encore dans la base de données.")
+            st.info("Le bot doit d'abord créer la table et insérer des données.")
+            
         cur.close()
         conn.close()
         
-        if not df.empty:
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-        return df
     except Exception as e:
-        st.sidebar.error(f"Erreur DB: {e}")
-        return pd.DataFrame()
-
-st.title("🚀 JetX Predictor Pro")
-st.sidebar.header("⚙️ Configuration")
-refresh_rate = st.sidebar.slider("Rafraîchissement (s)", 1, 10, 3)
-
-df = load_data()
-
-if df.empty:
-    st.error("🔴 Bot en attente de données...")
-    st.info("Le bot doit d'abord capturer un tour dans la base PostgreSQL.")
-    if st.button("🔄 Actualiser"):
-        st.rerun()
-else:
-    df_results = df[df['type'] == 'result'].copy()
-    
-    if not df_results.empty:
-        latest = df_results.iloc[0]
+        st.error("❌ Échec de la connexion à la base de données.")
+        st.code(str(e))
         
-        # 1. PREDICTION TOUR SUIVANT
-        st.markdown(f"""
-            <div style="background-color: #262730; padding: 30px; border-radius: 15px; border-left: 10px solid #00ff00; text-align: center; margin-bottom: 25px;">
-                <h2 style="margin: 0; color: #00ff00;">🔮 PRÉDICTION PROCHAIN TOUR</h2>
-                <h1 style="font-size: 80px; margin: 10px 0;">{latest['prediction']:.2f}x</h1>
-                <p style="color: #888;">Analyse PostgreSQL en temps réel</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # 2. DERNIERS 5 TOURS
-        st.subheader("📊 Historique des 5 derniers tours")
-        cols = st.columns(5)
-        last_5 = df_results.head(5)
-        for i, (_, row) in enumerate(last_5.iterrows()):
-            with cols[i]:
-                color = "#00ff00" if row['multiplier'] >= 2.0 else "#ff4b4b"
-                st.markdown(f"""
-                    <div style="background-color: #1e2130; padding: 15px; border-radius: 10px; text-align: center; border: 1px solid #4e5d6c;">
-                        <p style="margin: 0; color: #888; font-size: 12px;">{row['timestamp'].strftime('%H:%M:%S')}</p>
-                        <h2 style="margin: 5px 0; color: {color};">{row['multiplier']:.2f}x</h2>
-                    </div>
-                """, unsafe_allow_html=True)
+        st.info("Conseil : Vérifiez que vous utilisez l'URL du 'pooler' de Neon et que '&sslmode=require' est présent.")
 
-# Auto-refresh
-time.sleep(refresh_rate)
-st.rerun()
+st.divider()
+if st.button("🔄 Re-tester la connexion"):
+    st.rerun()
