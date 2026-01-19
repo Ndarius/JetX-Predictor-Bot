@@ -141,7 +141,9 @@ class JetXBetpawaBot:
         # Forcer le binaire Chromium pour Koyeb
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--single-process") # Réduit drastiquement l'usage RAM (mais moins stable)
+        # chrome_options.add_argument("--single-process") # Désactivé car cause des crashs sur certaines versions
+        chrome_options.add_argument("--disable-setuid-sandbox")
+        chrome_options.add_argument("--remote-debugging-port=9222")
         
         chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
         if os.path.exists(chrome_bin):
