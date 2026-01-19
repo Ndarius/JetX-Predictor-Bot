@@ -19,6 +19,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from strategies import StatisticalStrategy, MartingaleStrategy
+from webdriver_manager.chrome import ChromeDriverManager
 
 # Configuration du logging
 logging.basicConfig(
@@ -60,7 +61,6 @@ class JetXBetpawaBot:
         if not db_url:
             return None
         try:
-            # Render fournit souvent une URL directe, mais on s'assure du SSL
             if "sslmode=" not in db_url:
                 separator = "&" if "?" in db_url else "?"
                 db_url += f"{separator}sslmode=require"
@@ -96,7 +96,7 @@ class JetXBetpawaBot:
             except Exception as e:
                 logging.error(f"Erreur lors de la configuration DB : {e}")
         else:
-            logging.warning("Mode sans base de données activé (DATABASE_URL manquante ou invalide).")
+            logging.warning("Mode sans base de données activé.")
 
     def setup_selenium(self):
         chrome_options = Options()
@@ -106,36 +106,27 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
         
-        # Optimisations agressives pour Render (RAM très limitée sur le plan Free)
+        # Optimisations pour Render
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-software-rasterizer")
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-        chrome_options.add_argument("--disable-background-networking")
-        chrome_options.add_argument("--disable-sync")
-        chrome_options.add_argument("--disable-translate")
-        chrome_options.add_argument("--metrics-recording-only")
-        chrome_options.add_argument("--no-first-run")
-        chrome_options.add_argument("--no-default-browser-check")
         
-        # Chemins spécifiques pour Render (via buildpack chrome)
-        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN")
-        if chrome_bin:
+        # Chemin binaire Chrome pour Docker
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/google-chrome-stable")
+        if os.path.exists(chrome_bin):
             chrome_options.binary_location = chrome_bin
-            logging.info(f"Utilisation du binaire Chrome Render : {chrome_bin}")
+            logging.info(f"Chrome binaire : {chrome_bin}")
         
         try:
-            # Sur Render, le chromedriver est généralement dans le PATH via le buildpack
-            self.driver = webdriver.Chrome(options=chrome_options)
-            logging.info("Chrome démarré avec succès sur Render.")
+            # Utilisation de WebDriver Manager pour installer automatiquement le bon driver
+            logging.info("Installation/Vérification du ChromeDriver via WebDriver Manager...")
+            driver_path = ChromeDriverManager().install()
+            service = ChromeService(executable_path=driver_path)
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            logging.info("Chrome démarré avec succès via WebDriver Manager.")
         except Exception as e:
-            logging.error(f"Crash Chrome : {e}. Tentative avec paramètres de secours...")
-            try:
-                # Tentative avec le driver système par défaut
-                service = ChromeService(executable_path="/usr/bin/chromedriver")
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            except Exception as e2:
-                logging.error(f"Échec critique Selenium sur Render : {e2}")
-                raise e2
+            logging.error(f"Échec critique Selenium : {e}")
+            raise e
             
         self.driver.set_page_load_timeout(60)
         self.wait = WebDriverWait(self.driver, 20)
