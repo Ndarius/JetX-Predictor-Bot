@@ -28,10 +28,11 @@ selectors:
     - ".last-results"
     - "div[class*='history']"
   login:
-    phone_input: "input[name='phoneNumber']"
-    pin_input: "input[name='pincode']"
-    submit_button: "input[type='submit']"
-    login_trigger: "#casino-lobby-login-button-click"
+    phone_input: "input[name='phoneNumber'], input[type='tel']"
+    pin_input: "input[name='pincode'], input[type='password']"
+    submit_button: "input[type='submit'], button[type='submit'], .login-submit-button"
+    login_trigger: "#casino-lobby-login-button-click, button[data-test-id='login-button']"
+    modal_login_button: "//button[contains(text(), 'LOGIN')] | //div[contains(text(), 'LOGIN')] | //button[contains(., 'LOGIN')]"
 
 # Paramètres Selenium
 selenium:

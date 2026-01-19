@@ -141,7 +141,6 @@ class JetXBetpawaBot:
         # Forcer le binaire Chromium pour Koyeb
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--no-sandbox")
-        # chrome_options.add_argument("--single-process") # Désactivé car cause des crashs sur certaines versions
         chrome_options.add_argument("--disable-setuid-sandbox")
         chrome_options.add_argument("--remote-debugging-port=9222")
         
@@ -179,52 +178,65 @@ class JetXBetpawaBot:
         logging.info(f"Connexion à {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(20) # Plus de temps pour charger la version mobile
+            time.sleep(15)
             
-            # Capture d'écran pour debug si besoin (optionnel)
-            # self.driver.save_screenshot("/bot/debug_login.png")
+            # Capture d'écran initiale pour debug
+            self.driver.save_screenshot("debug_betpawa_initial.png")
             
-            # Capture d'écran pour debug
-            self.driver.save_screenshot("debug_betpawa.png")
-            logging.info("Capture d'écran de debug enregistrée sous debug_betpawa.png")
-            
-            if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source or "Balance" in self.driver.page_source:
+            if any(word in self.driver.page_source for word in ["Deposit", "Déposer", "Balance", "Solde"]):
                 logging.info("Déjà connecté.")
                 return True
             
-            # Gestion du pop-up spécifique "Join Now or Log In"
+            # 1. Gérer le pop-up "Join Now or Log In"
+            logging.info("Recherche du pop-up de connexion...")
             try:
-                login_buttons = self.driver.find_elements(By.XPATH, "//button[contains(text(), 'LOGIN')] | //div[contains(text(), 'LOGIN')]")
-                if login_buttons:
-                    login_buttons[0].click()
-                    logging.info("Bouton LOGIN du pop-up cliqué.")
-                    time.sleep(5)
-            except:
-                pass
+                modal_login_xpath = self.selectors['login'].get('modal_login_button', "//button[contains(text(), 'LOGIN')]")
+                modal_login = self.wait.until(EC.element_to_be_clickable((By.XPATH, modal_login_xpath)))
+                modal_login.click()
+                logging.info("Bouton LOGIN du pop-up cliqué.")
+                time.sleep(5)
+            except Exception as e:
+                logging.info(f"Pop-up non trouvé ou déjà fermé : {e}")
 
-            # Tentative de login classique si le pop-up n'était pas là ou n'a pas suffi
+            # 2. Remplir le formulaire de connexion
+            logging.info("Tentative de remplissage du formulaire de login...")
             try:
-                phone_fields = self.driver.find_elements(By.CSS_SELECTOR, "input[name='phoneNumber'], input[type='tel']")
-                if phone_fields:
-                    phone_fields[0].send_keys(self.auth['phone'])
-                    pin_fields = self.driver.find_elements(By.CSS_SELECTOR, "input[name='pincode'], input[type='password']")
-                    if pin_fields:
-                        pin_fields[0].send_keys(self.auth['pin'])
-                        submit_buttons = self.driver.find_elements(By.CSS_SELECTOR, "input[type='submit'], button[type='submit']")
-                        if submit_buttons:
-                            submit_buttons[0].click()
-                            logging.info("Formulaire de login soumis.")
+                # Attendre que le champ téléphone soit visible
+                phone_selector = self.selectors['login'].get('phone_input', "input[name='phoneNumber']")
+                phone_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, phone_selector)))
+                
+                # Nettoyer et saisir le téléphone
+                phone_field.clear()
+                phone_field.send_keys(self.auth['phone'])
+                logging.info(f"Numéro de téléphone saisi : {self.auth['phone']}")
+
+                # Saisir le PIN
+                pin_selector = self.selectors['login'].get('pin_input', "input[name='pincode']")
+                pin_field = self.driver.find_element(By.CSS_SELECTOR, pin_selector)
+                pin_field.clear()
+                pin_field.send_keys(self.auth['pin'])
+                logging.info("Code PIN saisi.")
+
+                # Cliquer sur le bouton de soumission
+                submit_selector = self.selectors['login'].get('submit_button', "button[type='submit']")
+                submit_button = self.driver.find_element(By.CSS_SELECTOR, submit_selector)
+                submit_button.click()
+                logging.info("Formulaire de login soumis.")
+                
+                time.sleep(10)
+                self.driver.save_screenshot("debug_betpawa_after_login.png")
             except Exception as e:
                 logging.error(f"Erreur lors du remplissage du formulaire : {e}")
             
-            time.sleep(15) # Attente du chargement après login
-            return True
-        except Exception as e:
-            logging.error(f"Erreur login : {e}")
-            # On tente quand même de continuer si on voit des éléments du jeu
-            if "multiplier" in self.driver.page_source.lower():
+            # Vérification finale
+            if any(word in self.driver.page_source for word in ["Deposit", "Déposer", "Balance", "Solde"]):
+                logging.info("Connexion réussie.")
                 return True
+            
             return False
+        except Exception as e:
+            logging.error(f"Erreur critique lors du login : {e}")
+            return "multiplier" in self.driver.page_source.lower()
 
     def log_data(self, multiplier, data_type="live", prediction=None):
         try:
@@ -298,7 +310,7 @@ class JetXBetpawaBot:
                     logging.warning(f"Erreur mineure dans la boucle : {e}")
                     if "session" in str(e).lower() or "disconnected" in str(e).lower():
                         raise e
-                time.sleep(2) # Augmenté pour économiser le CPU sur Koyeb
+                time.sleep(2)
         finally:
             if hasattr(self, 'driver'):
                 try: self.driver.quit()
