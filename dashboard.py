@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pandas only s
 # Configuration de la page
 st.set_page_config(page_title="JetX Predictor Dashboard", layout="wide", page_icon="🚀")
 
-# Style CSS personnalisé
+# Style CSS personnalisé pour une interface plus "temps réel"
 st.markdown("""
     <style>
     .main {
@@ -33,25 +33,24 @@ st.markdown("""
         border-left: 5px solid #ff4b4b;
         margin-bottom: 20px;
     }
+    /* Animation de pulsation pour indiquer le live */
+    .live-indicator {
+        float: right;
+        color: #ff4b4b;
+        font-weight: bold;
+        animation: blinker 1.5s linear infinite;
+    }
+    @keyframes blinker {
+        50% { opacity: 0; }
+    }
     </style>
     """, unsafe_allow_html=True)
 
+st.markdown('<div class="live-indicator">● LIVE</div>', unsafe_allow_html=True)
 st.title("🚀 JetX Predictor Pro - Dashboard")
 
-# Debug Images Section
-debug_files = ["debug_betpawa.png", "debug_betpawa_initial.png", "debug_betpawa_after_login.png"]
-available_debug = [f for f in debug_files if os.path.exists(f)]
-
-if available_debug:
-    with st.expander("🔍 Voir l'état du Bot (Debug)", expanded=False):
-        cols = st.columns(len(available_debug))
-        for i, img_path in enumerate(available_debug):
-            with cols[i]:
-                st.image(img_path, caption=f"Capture: {img_path}")
-else:
-    st.sidebar.info("ℹ️ Aucune capture de debug disponible pour le moment.")
-
-# Connexion à la base de données
+# Connexion à la base de données avec cache pour la performance
+@st.cache_resource(ttl=60)
 def get_db_connection():
     db_url = os.environ.get('DATABASE_URL')
     if not db_url:
@@ -66,18 +65,32 @@ def load_data():
     if not conn:
         return pd.DataFrame()
     try:
+        # On récupère les 100 derniers logs pour l'historique
         query = "SELECT * FROM jetx_logs ORDER BY timestamp DESC LIMIT 100"
         df = pd.read_sql(query, conn)
-        conn.close()
         return df
     except Exception as e:
-        if conn: conn.close()
         return pd.DataFrame()
+
+# Debug Images Section
+debug_files = ["debug_betpawa.png", "debug_betpawa_initial.png", "debug_betpawa_after_login.png"]
+available_debug = [f for f in debug_files if os.path.exists(f)]
+
+if available_debug:
+    with st.expander("🔍 Voir l'état du Bot (Debug)", expanded=False):
+        cols = st.columns(len(available_debug))
+        for i, img_path in enumerate(available_debug):
+            with cols[i]:
+                # Ajout d'un paramètre de temps pour forcer le rafraîchissement de l'image
+                st.image(f"{img_path}?t={int(time.time())}", caption=f"Capture: {img_path}")
+else:
+    st.sidebar.info("ℹ️ Aucune capture de debug disponible.")
 
 # Sidebar pour le statut
 st.sidebar.header("Statut du Système")
 db_status = "✅ Connecté" if os.environ.get('DATABASE_URL') else "❌ Non configuré"
 st.sidebar.write(f"Base de données : {db_status}")
+st.sidebar.write(f"Dernier rafraîchissement : {datetime.now().strftime('%H:%M:%S')}")
 
 # Chargement des données
 df = load_data()
@@ -142,6 +155,6 @@ else:
     st.warning("⚠️ Aucune donnée trouvée dans la base de données.")
     st.info("Le bot est connecté mais attend la fin du premier tour pour enregistrer des données.")
 
-# Auto-refresh toutes les 15 secondes
-time.sleep(15)
+# Rafraîchissement dynamique toutes les 3 secondes
+time.sleep(3)
 st.rerun()
