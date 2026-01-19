@@ -7,6 +7,7 @@ import sys
 import yaml
 import psycopg2
 import time
+import json
 from psycopg2.extras import RealDictCursor
 
 # Ajouter le répertoire courant au chemin de recherche Python
@@ -129,8 +130,30 @@ class JetXBetpawaBot:
         self.driver.set_page_load_timeout(60)
         self.wait = WebDriverWait(self.driver, 30)
 
+    def inspect_page(self):
+        """Analyse la page via JS pour trouver les éléments clés"""
+        script = """
+        var results = {
+            inputs: [],
+            buttons: [],
+            iframes: document.querySelectorAll('iframe').length
+        };
+        document.querySelectorAll('input').forEach(i => {
+            results.inputs.push({id: i.id, name: i.name, type: i.type, placeholder: i.placeholder, visible: i.offsetWidth > 0});
+        });
+        document.querySelectorAll('button').forEach(b => {
+            results.buttons.push({id: b.id, text: b.innerText, type: b.type, visible: b.offsetWidth > 0});
+        });
+        return JSON.stringify(results);
+        """
+        try:
+            info = json.loads(self.driver.execute_script(script))
+            logging.info(f"Inspection Page: {len(info['inputs'])} inputs, {len(info['buttons'])} boutons, {info['iframes']} iframes.")
+            return info
+        except:
+            return None
+
     def human_type(self, element, text):
-        """Simule une saisie humaine touche par touche"""
         try:
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
             time.sleep(0.5)
@@ -145,7 +168,6 @@ class JetXBetpawaBot:
             self.driver.execute_script(f"arguments[0].value = '{text}';", element)
 
     def human_click(self, element):
-        """Simule un mouvement de souris et un clic physique avec sécurité"""
         try:
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
             time.sleep(0.8)
@@ -162,79 +184,52 @@ class JetXBetpawaBot:
             time.sleep(12)
             self.driver.save_screenshot("debug_betpawa_login_page.png")
             
+            # Auto-inspection
+            self.inspect_page()
+            
             if any(word in self.driver.page_source for word in ["Deposit", "Balance", "Account"]):
                 logging.info("Déjà connecté.")
                 return self.navigate_to_jetx()
             
-            # --- UTILISATION DES IDS PRIORITAIRES ---
-            logging.info("Recherche des champs via IDs prioritaires...")
-            
+            # --- LOGIQUE DE CONNEXION VIA INSPECTION ---
             if len(self.driver.find_elements(By.TAG_NAME, "iframe")) > 0:
+                logging.info("Bascule vers l'iframe de login...")
                 self.driver.switch_to.frame(0)
+                self.inspect_page()
 
-            # Recherche du champ téléphone (Priorité aux IDs connus de Betpawa)
-            phone_selectors = [
-                (By.ID, "phoneNumber"),
-                (By.ID, "mobileNumber"),
-                (By.NAME, "phoneNumber"),
-                (By.CSS_SELECTOR, "input[type='tel']"),
-                (By.XPATH, "//input[contains(@id, 'phone')]")
-            ]
-            
+            # Recherche dynamique du champ téléphone
             phone_field = None
-            for by, sel in phone_selectors:
+            for by, sel in [(By.ID, "phoneNumber"), (By.NAME, "phoneNumber"), (By.CSS_SELECTOR, "input[type='tel']"), (By.XPATH, "//input[contains(@placeholder, 'number')]")]:
                 try:
                     phone_field = self.wait.until(EC.presence_of_element_located((by, sel)))
-                    if phone_field: 
-                        logging.info(f"Champ téléphone trouvé via {by}={sel}")
-                        break
+                    if phone_field: break
                 except: continue
             
             if phone_field:
                 self.human_type(phone_field, self.auth['phone'])
             
-            # Recherche du champ PIN (Priorité aux IDs connus)
-            pin_selectors = [
-                (By.ID, "pincode"),
-                (By.ID, "password"),
-                (By.NAME, "pincode"),
-                (By.CSS_SELECTOR, "input[type='password']"),
-                (By.XPATH, "//input[contains(@id, 'pin')]")
-            ]
-            
+            # Recherche dynamique du champ PIN
             pin_field = None
-            for by, sel in pin_selectors:
+            for by, sel in [(By.ID, "pincode"), (By.NAME, "pincode"), (By.CSS_SELECTOR, "input[type='password']"), (By.XPATH, "//input[contains(@placeholder, 'PIN')]")]:
                 try:
                     pin_field = self.driver.find_element(by, sel)
-                    if pin_field: 
-                        logging.info(f"Champ PIN trouvé via {by}={sel}")
-                        break
+                    if pin_field: break
                 except: continue
             
             if pin_field:
                 self.human_type(pin_field, self.auth['pin'])
 
-            # Clic sur le bouton de validation (Priorité aux IDs)
-            submit_selectors = [
-                (By.ID, "login-button"),
-                (By.XPATH, "//button[contains(@id, 'login')]"),
-                (By.XPATH, "//button[contains(., 'LOG IN')]"),
-                (By.CSS_SELECTOR, "button[type='submit']")
-            ]
-            
+            # Recherche dynamique du bouton submit
             submit_btn = None
-            for by, sel in submit_selectors:
+            for by, sel in [(By.XPATH, "//button[contains(., 'LOG IN')]"), (By.CSS_SELECTOR, "button[type='submit']"), (By.XPATH, "//button[contains(@class, 'login')]")]:
                 try:
                     submit_btn = self.driver.find_element(by, sel)
-                    if submit_btn: 
-                        logging.info(f"Bouton login trouvé via {by}={sel}")
-                        break
+                    if submit_btn: break
                 except: continue
 
             if submit_btn:
                 self.human_click(submit_btn)
             else:
-                logging.error("Bouton submit non trouvé, validation via Enter...")
                 if pin_field: pin_field.send_keys(Keys.ENTER)
 
             self.driver.switch_to.default_content()
@@ -252,6 +247,7 @@ class JetXBetpawaBot:
         try:
             self.driver.get("https://www.betpawa.bj/casino?gameId=jetx")
             time.sleep(15)
+            self.inspect_page()
             self.driver.save_screenshot("debug_betpawa_jetx_loaded.png")
             return True
         except:
