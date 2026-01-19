@@ -147,10 +147,8 @@ class JetXBetpawaBot:
     def human_click(self, element):
         """Simule un mouvement de souris et un clic physique avec sécurité"""
         try:
-            # Faire défiler jusqu'à l'élément pour éviter 'out of bounds'
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
             time.sleep(0.8)
-            
             actions = ActionChains(self.driver)
             actions.move_to_element(element).pause(0.5).click().perform()
         except Exception as e:
@@ -168,42 +166,74 @@ class JetXBetpawaBot:
                 logging.info("Déjà connecté.")
                 return self.navigate_to_jetx()
             
-            # --- LOGIQUE DE CONNEXION SÉCURISÉE ---
-            logging.info("Tentative de connexion...")
+            # --- UTILISATION DES IDS PRIORITAIRES ---
+            logging.info("Recherche des champs via IDs prioritaires...")
             
             if len(self.driver.find_elements(By.TAG_NAME, "iframe")) > 0:
                 self.driver.switch_to.frame(0)
 
-            # Recherche du champ téléphone
+            # Recherche du champ téléphone (Priorité aux IDs connus de Betpawa)
+            phone_selectors = [
+                (By.ID, "phoneNumber"),
+                (By.ID, "mobileNumber"),
+                (By.NAME, "phoneNumber"),
+                (By.CSS_SELECTOR, "input[type='tel']"),
+                (By.XPATH, "//input[contains(@id, 'phone')]")
+            ]
+            
             phone_field = None
-            for by, sel in [(By.NAME, "phoneNumber"), (By.CSS_SELECTOR, "input[type='tel']"), (By.XPATH, "//input[contains(@name, 'phone')]")]:
+            for by, sel in phone_selectors:
                 try:
                     phone_field = self.wait.until(EC.presence_of_element_located((by, sel)))
-                    if phone_field: break
+                    if phone_field: 
+                        logging.info(f"Champ téléphone trouvé via {by}={sel}")
+                        break
                 except: continue
             
             if phone_field:
-                logging.info("Saisie du téléphone...")
                 self.human_type(phone_field, self.auth['phone'])
             
-            # Recherche du champ PIN
+            # Recherche du champ PIN (Priorité aux IDs connus)
+            pin_selectors = [
+                (By.ID, "pincode"),
+                (By.ID, "password"),
+                (By.NAME, "pincode"),
+                (By.CSS_SELECTOR, "input[type='password']"),
+                (By.XPATH, "//input[contains(@id, 'pin')]")
+            ]
+            
             pin_field = None
-            for by, sel in [(By.NAME, "pincode"), (By.CSS_SELECTOR, "input[type='password']"), (By.XPATH, "//input[contains(@name, 'pin')]")]:
+            for by, sel in pin_selectors:
                 try:
                     pin_field = self.driver.find_element(by, sel)
-                    if pin_field: break
+                    if pin_field: 
+                        logging.info(f"Champ PIN trouvé via {by}={sel}")
+                        break
                 except: continue
             
             if pin_field:
-                logging.info("Saisie du PIN...")
                 self.human_type(pin_field, self.auth['pin'])
 
-            # Clic sur le bouton de validation
-            try:
-                submit_btn = self.driver.find_element(By.XPATH, "//button[contains(., 'LOG IN')] | //input[@type='submit'] | //button[@type='submit']")
-                logging.info("Clic sur le bouton de login...")
+            # Clic sur le bouton de validation (Priorité aux IDs)
+            submit_selectors = [
+                (By.ID, "login-button"),
+                (By.XPATH, "//button[contains(@id, 'login')]"),
+                (By.XPATH, "//button[contains(., 'LOG IN')]"),
+                (By.CSS_SELECTOR, "button[type='submit']")
+            ]
+            
+            submit_btn = None
+            for by, sel in submit_selectors:
+                try:
+                    submit_btn = self.driver.find_element(by, sel)
+                    if submit_btn: 
+                        logging.info(f"Bouton login trouvé via {by}={sel}")
+                        break
+                except: continue
+
+            if submit_btn:
                 self.human_click(submit_btn)
-            except:
+            else:
                 logging.error("Bouton submit non trouvé, validation via Enter...")
                 if pin_field: pin_field.send_keys(Keys.ENTER)
 
