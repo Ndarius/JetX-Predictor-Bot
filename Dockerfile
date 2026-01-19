@@ -39,7 +39,7 @@ RUN mkdir -p /bot && chmod 777 /bot
 # Make start script executable
 RUN chmod +x start.sh
 
-# Expose port for Streamlit
+# Expose port for Streamlit (if needed)
 EXPOSE 8000
 
 # Set environment variables

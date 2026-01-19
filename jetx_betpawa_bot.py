@@ -1,4 +1,3 @@
-import time
 import datetime
 import numpy as np
 import pandas as pd
@@ -7,6 +6,7 @@ import os
 import sys
 import yaml
 import psycopg2
+import time
 from psycopg2.extras import RealDictCursor
 
 # Ajouter le répertoire courant au chemin de recherche Python
@@ -32,12 +32,15 @@ class JetXBetpawaBot:
         if config_path is None:
             base_dir = os.path.dirname(os.path.abspath(__file__))
             config_path = os.path.join(base_dir, "config.yaml")
-        self.load_config(config_path)
-        self.setup_storage()
-        self.setup_selenium()
+        
+        # Initialisation des variables AVANT le chargement du stockage
         self.full_history = []
         self.df_full = pd.DataFrame()
         self.current_prediction = {"lower": None, "upper": None, "confidence": 0, "next": None}
+        
+        self.load_config(config_path)
+        self.setup_storage()
+        self.setup_selenium()
 
     def load_config(self, path):
         with open(path, 'r') as f:
@@ -101,8 +104,9 @@ class JetXBetpawaBot:
             # Charger l'historique existant
             cur.execute("SELECT multiplier FROM jetx_logs WHERE type='result' ORDER BY timestamp ASC")
             rows = cur.fetchall()
-            self.full_history = [row[0] for row in rows]
-            self.df_full = pd.DataFrame(rows, columns=['multiplier'])
+            if rows:
+                self.full_history = [row[0] for row in rows]
+                self.df_full = pd.DataFrame(rows, columns=['multiplier'])
             
             cur.close()
             conn.close()
@@ -118,6 +122,7 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1280,720")
+        
         # Optimisations agressives pour Koyeb (RAM limitée)
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-software-rasterizer")
@@ -125,37 +130,33 @@ class JetXBetpawaBot:
         chrome_options.add_argument("--no-first-run")
         chrome_options.add_argument("--no-default-browser-check")
         chrome_options.add_argument("--memory-pressure-off")
-        chrome_options.add_argument("--blink-settings=imagesEnabled=false") # Désactiver les images pour sauver de la RAM
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
         chrome_options.add_argument("--disable-background-networking")
         chrome_options.add_argument("--disable-sync")
         chrome_options.add_argument("--disable-translate")
         chrome_options.add_argument("--metrics-recording-only")
         chrome_options.add_argument("--safebrowsing-disable-auto-update")
         
-        # Utiliser le binaire système s'il existe
-        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN")
-        if chrome_bin and os.path.exists(chrome_bin):
+        # Forcer le binaire Chromium pour Koyeb
+        chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
+        if os.path.exists(chrome_bin):
             chrome_options.binary_location = chrome_bin
-        else:
-            for path in ["/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium"]:
-                if os.path.exists(path):
-                    chrome_options.binary_location = path
-                    break
+            logging.info(f"Utilisation du binaire Chrome : {chrome_bin}")
         
         try:
-            # Tenter de démarrer avec le service système si possible
-            driver_path = os.environ.get("CHROMEDRIVER_PATH")
-            if driver_path and os.path.exists(driver_path):
+            # Tenter de démarrer avec le driver spécifié
+            driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
+            if os.path.exists(driver_path):
                 service = ChromeService(executable_path=driver_path)
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                logging.info(f"Chrome démarré avec le driver : {driver_path}")
             else:
                 self.driver = webdriver.Chrome(options=chrome_options)
-            logging.info("Chrome démarré avec le driver système.")
+                logging.info("Chrome démarré avec le driver par défaut.")
         except Exception as e:
             logging.warning(f"Échec driver système, tentative avec WebDriver Manager : {e}")
             try:
                 from webdriver_manager.chrome import ChromeDriverManager
-                # On force une version stable pour éviter les erreurs de téléchargement
                 driver_path = ChromeDriverManager().install()
                 service = ChromeService(executable_path=driver_path)
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -171,20 +172,27 @@ class JetXBetpawaBot:
         logging.info(f"Connexion à {self.url}")
         try:
             self.driver.get(self.url)
-            time.sleep(10)
+            time.sleep(15) # Augmenté pour Koyeb
+            
             if "Deposit" in self.driver.page_source or "Déposer" in self.driver.page_source:
+                logging.info("Déjà connecté.")
                 return True
             
             login_trigger = self.selectors['login']['login_trigger']
             self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_trigger))).click()
-            time.sleep(3)
+            time.sleep(5)
+            
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['phone_input']).send_keys(self.auth['phone'])
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['pin_input']).send_keys(self.auth['pin'])
             self.driver.find_element(By.CSS_SELECTOR, self.selectors['login']['submit_button']).click()
-            time.sleep(10)
+            
+            time.sleep(15) # Attente du chargement après login
             return True
         except Exception as e:
             logging.error(f"Erreur login : {e}")
+            # On tente quand même de continuer si on voit des éléments du jeu
+            if "multiplier" in self.driver.page_source.lower():
+                return True
             return False
 
     def log_data(self, multiplier, data_type="live", prediction=None):
@@ -229,8 +237,8 @@ class JetXBetpawaBot:
 
     def run(self):
         if not self.login(): 
-            logging.error("Échec du login. Arrêt du bot.")
-            return
+            logging.error("Échec du login. Tentative de surveillance quand même...")
+        
         logging.info("Surveillance active...")
         try:
             last_val = None
@@ -257,10 +265,9 @@ class JetXBetpawaBot:
                             logging.info(f"SIGNAL: CASH OUT! {current_val}x")
                 except Exception as e:
                     logging.warning(f"Erreur mineure dans la boucle : {e}")
-                    # Si l'erreur est grave (ex: session Chrome perdue), on laisse remonter pour redémarrer
                     if "session" in str(e).lower() or "disconnected" in str(e).lower():
                         raise e
-                time.sleep(1) # Augmenté à 1s pour économiser le CPU
+                time.sleep(2) # Augmenté pour économiser le CPU sur Koyeb
         finally:
             if hasattr(self, 'driver'):
                 try: self.driver.quit()
@@ -273,4 +280,4 @@ if __name__ == "__main__":
             bot.run()
         except Exception as e:
             logging.error(f"Crash : {e}")
-            time.sleep(10)
+            time.sleep(20)
